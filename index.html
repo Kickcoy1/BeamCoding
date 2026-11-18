@@ -495,6 +495,67 @@
       cursor: not-allowed !important;
     }
 
+    .cursor-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fbfcfe;
+    }
+
+    .cursor-values {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(80px, 1fr));
+      gap: 10px;
+      width: 100%;
+      font-size: 12px;
+    }
+
+    .cursor-value {
+      min-width: 0;
+    }
+
+    .cursor-value span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .cursor-value strong {
+      display: block;
+      margin-top: 2px;
+      color: #344054;
+      font-size: 13px;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .clear-selection {
+      min-width: 44px;
+      min-height: 44px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: #fff;
+      color: #344054;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .diagram-svg {
+      touch-action: pan-x pan-y;
+    }
+
+    .diagram-svg:focus-visible {
+      outline: 3px solid rgba(37, 99, 235, 0.28);
+      outline-offset: 3px;
+    }
+
     .recommendation {
       margin-top: 16px;
       border: 1px solid #cfe0ff;
@@ -554,6 +615,14 @@
 
       .drawing-content {
         min-width: 680px;
+      }
+
+      .cursor-toolbar {
+        align-items: stretch;
+      }
+
+      .cursor-values {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
     }
   </style>
@@ -652,7 +721,7 @@
 
           <div class="drawing-scroll" aria-label="Beam drawing and diagrams">
             <div class="drawing-content">
-              <svg class="diagram-svg" viewBox="0 0 800 560" role="img" aria-labelledby="beam-title beam-desc">
+              <svg class="diagram-svg" id="beam-diagram" viewBox="0 0 800 560" tabindex="0" role="application" aria-label="Interactive beam, shear, moment, and deflection diagrams" aria-describedby="diagram-help" aria-labelledby="beam-title beam-desc">
                 <title id="beam-title">Example beam analysis</title>
                 <desc id="beam-desc">A 20 foot simply supported beam with a full-span uniform load, three placeholder diagrams, and reaction labels.</desc>
 
@@ -775,8 +844,36 @@
                   <line x1="714" y1="468" x2="714" y2="474"/>
                   <text x="714" y="488" text-anchor="middle" stroke="none">20 ft</text>
                 </g>
+
+                <g id="cursor-render" pointer-events="none" style="display:none">
+                  <line id="cursor-line" x1="86" y1="20" x2="86" y2="488"
+                    stroke="#101828" stroke-width="1.5" stroke-dasharray="4 4"/>
+                  <circle id="cursor-dot" cx="86" cy="82" r="4" fill="#101828"/>
+                </g>
               </svg>
             </div>
+          </div>
+          <p id="diagram-help" hidden>Use the mouse or arrow keys to inspect beam positions. Click or tap to pin a position. Press Escape or use Clear position to clear it.</p>
+          <div class="cursor-toolbar" id="cursor-toolbar">
+            <div class="cursor-values" id="cursor-values" aria-live="polite">
+              <div class="cursor-value">
+                <span>Position</span>
+                <strong id="cursor-position">No position selected</strong>
+              </div>
+              <div class="cursor-value">
+                <span>Shear</span>
+                <strong id="cursor-shear">Unavailable</strong>
+              </div>
+              <div class="cursor-value">
+                <span>Moment</span>
+                <strong id="cursor-moment">Unavailable</strong>
+              </div>
+              <div class="cursor-value">
+                <span>Deflection</span>
+                <strong id="cursor-deflection">Unavailable</strong>
+              </div>
+            </div>
+            <button class="clear-selection" id="clear-cursor" type="button" disabled>Clear</button>
           </div>
         </article>
 
@@ -864,7 +961,14 @@
           endTracksSpan: true
         }
       ],
-      nextLoadId: 2
+      nextLoadId: 2,
+      cursor: {
+        xFt: null,
+        pinned: false,
+        hoverActive: false
+      },
+      latestStage3: null,
+      latestStage4: null
     };
 
     const sectionsByMaterial = {
@@ -1260,7 +1364,7 @@
       const mh = stage3Result.momentAt((x0In + h / 2) / 12) * 12;
       const m1 = stage3Result.momentAt(x1In / 12) * 12;
       const c0 = m0;
-      const c2 = (m1 - 2 * mh + m0) / (h * h);
+      const c2 = 2 * (m1 - 2 * mh + m0) / (h * h);
       const c1 = (mh - c0 - c2 * h * h / 4) * 2 / h;
       return [c0, c1, c2];
     }
@@ -1511,7 +1615,8 @@
       uniformGroup.innerHTML = "";
       pointGroup.innerHTML = "";
 
-      result.uniformLoads.forEach((load) => {
+      const sortedUniformLoads = result.uniformLoads.slice().sort((a, b) => a.start - b.start);
+      sortedUniformLoads.forEach((load, loadIndex) => {
         const startX = beamX(load.start);
         const endX = beamX(load.end);
         const arrowCount = Math.max(2, Math.min(12, Math.ceil((endX - startX) / 68)));
@@ -1526,19 +1631,40 @@
               marker-end="url(#${downward ? "arrow-down" : "arrow-up"})"/>`
           );
         }
+        const previous = loadIndex > 0 ? sortedUniformLoads[loadIndex - 1] : null;
+        const close = previous && beamX(load.start) - beamX(previous.start) < 72;
+        const labelY = close ? 18 + (loadIndex % 2) * 14 : 28;
+        uniformGroup.insertAdjacentHTML(
+          "beforeend",
+          `<text x="${((startX + endX) / 2).toFixed(2)}" y="${labelY}"
+            text-anchor="middle" font-family="Inter, sans-serif" font-size="10"
+            font-weight="800" fill="${load.signedMagnitude >= 0 ? "#2563eb" : "#15803d"}">
+            ${formatDisplay(load.signedMagnitude)} kip/ft · ${formatDisplay(load.start)}-${formatDisplay(load.end)} ft
+          </text>`
+        );
       });
 
-      result.pointLoads.forEach((load) => {
+      const sortedPointLoads = result.pointLoads.slice().sort((a, b) => a.position - b.position);
+      let previousPointX = null;
+      let pointRow = 0;
+      sortedPointLoads.forEach((load) => {
         const x = beamX(load.position);
         const downward = load.signedMagnitude >= 0;
         const y1 = downward ? 50 : 76;
         const y2 = downward ? 74 : 50;
+        if (previousPointX !== null && Math.abs(x - previousPointX) < 52) {
+          pointRow = (pointRow + 1) % 2;
+        } else {
+          pointRow = 0;
+        }
+        previousPointX = x;
+        const labelY = downward ? 42 - pointRow * 12 : 92 + pointRow * 12;
         pointGroup.insertAdjacentHTML(
           "beforeend",
           `<line x1="${x.toFixed(2)}" y1="${y1}" x2="${x.toFixed(2)}" y2="${y2}"
             stroke="${downward ? "#2563eb" : "#15803d"}" stroke-width="2"
             marker-end="url(#${downward ? "arrow-down" : "arrow-up"})"/>
-          <text x="${x.toFixed(2)}" y="${downward ? 42 : 92}" text-anchor="middle"
+          <text x="${x.toFixed(2)}" y="${labelY}" text-anchor="middle"
             font-family="Inter, sans-serif" font-size="11" font-weight="800"
             fill="${downward ? "#2563eb" : "#15803d"}">${formatDisplay(load.signedMagnitude)} k</text>`
         );
@@ -1550,10 +1676,9 @@
         const endX = beamX(first.end);
         const box = document.getElementById("uniform-load-label-box");
         box.setAttribute("x", String(startX));
-        box.setAttribute("width", String(Math.max(0, endX - startX)));
+        box.setAttribute("width", "0");
         document.getElementById("uniform-load-label").setAttribute("x", String((startX + endX) / 2));
-        document.getElementById("uniform-load-label").textContent =
-          `${formatDisplay(first.signedMagnitude)} kip/ft`;
+        document.getElementById("uniform-load-label").textContent = "";
       } else {
         document.getElementById("uniform-load-label-box").setAttribute("width", "0");
         document.getElementById("uniform-load-label").textContent = "";
@@ -1828,6 +1953,118 @@
       return value.toFixed(2);
     }
 
+    const cursorInteraction = {
+      positionTolerance: 1e-6,
+      getSvgPoint(event) {
+        const svg = document.getElementById("beam-diagram");
+        if (!svg) return null;
+        const point = svg.createSVGPoint();
+        point.x = event.clientX;
+        point.y = event.clientY;
+        const matrix = svg.getScreenCTM();
+        return matrix ? point.matrixTransform(matrix.inverse()) : null;
+      },
+      xToFeet(svgX) {
+        const stage3 = state.latestStage3;
+        if (!stage3) return null;
+        const feet = ((svgX - 86) / (714 - 86)) * stage3.L;
+        return Math.max(0, Math.min(stage3.L, feet));
+      },
+      findExactPointLoad(xFt) {
+        const stage3 = state.latestStage3;
+        if (!stage3) return null;
+        return stage3.pointLoads.find(
+          (load) => Math.abs(load.position - xFt) <= cursorInteraction.positionTolerance
+        ) || null;
+      },
+      getSelectedValues(xFt) {
+        const stage3 = state.latestStage3;
+        const stage4 = state.latestStage4;
+        if (!stage3 || !stage4 || !Number.isFinite(xFt)) return null;
+
+        const exactPoint = cursorInteraction.findExactPointLoad(xFt);
+        if (exactPoint) {
+          return {
+            xFt,
+            exactPointLoad: true,
+            vMinus: stage3.shearAt(exactPoint.position, "left"),
+            vPlus: stage3.shearAt(exactPoint.position, "right"),
+            moment: stage3.momentAt(exactPoint.position),
+            deflection:
+              evaluateDeflectionAt(stage4.deflection, exactPoint.position * 12)
+          };
+        }
+
+        return {
+          xFt,
+          exactPointLoad: false,
+          vMinus: null,
+          vPlus: null,
+          shear: stage3.shearAt(xFt, "right"),
+          moment: stage3.momentAt(xFt),
+          deflection: evaluateDeflectionAt(stage4.deflection, xFt * 12)
+        };
+      },
+      render(values) {
+        const cursor = document.getElementById("cursor-render");
+        const line = document.getElementById("cursor-line");
+        const dot = document.getElementById("cursor-dot");
+        const position = document.getElementById("cursor-position");
+        const shear = document.getElementById("cursor-shear");
+        const moment = document.getElementById("cursor-moment");
+        const deflection = document.getElementById("cursor-deflection");
+        const clear = document.getElementById("clear-cursor");
+
+        if (!values || !cursor) return;
+        const stage3 = state.latestStage3;
+        if (!stage3) return;
+        const svgX = 86 + (values.xFt / stage3.L) * (714 - 86);
+        cursor.style.display = "";
+        line.setAttribute("x1", svgX.toFixed(3));
+        line.setAttribute("x2", svgX.toFixed(3));
+        dot.setAttribute("cx", svgX.toFixed(3));
+        position.textContent = `${formatDisplay(values.xFt)} ft`;
+
+        if (values.exactPointLoad) {
+          shear.textContent =
+            `V- ${formatDisplay(values.vMinus)} k · V+ ${formatDisplay(values.vPlus)} k`;
+        } else {
+          shear.textContent = `${formatDisplay(values.shear)} k`;
+        }
+        moment.textContent = `${formatDisplay(values.moment)} kip-ft`;
+        deflection.textContent = `${formatDisplay(values.deflection)} in`;
+        clear.disabled = false;
+      },
+      clear() {
+        state.cursor.xFt = null;
+        state.cursor.pinned = false;
+        state.cursor.hoverActive = false;
+        document.getElementById("cursor-render").style.display = "none";
+        document.getElementById("cursor-position").textContent = "No position selected";
+        document.getElementById("cursor-shear").textContent = "Unavailable";
+        document.getElementById("cursor-moment").textContent = "Unavailable";
+        document.getElementById("cursor-deflection").textContent = "Unavailable";
+        document.getElementById("clear-cursor").disabled = true;
+      },
+      setFromClientPosition(clientX, clientY) {
+        if (!state.latestStage3 || !state.latestStage4) return null;
+        const svg = document.getElementById("beam-diagram");
+        const rect = svg.getBoundingClientRect();
+        if (clientY < rect.top || clientY > rect.bottom ||
+            clientX < rect.left || clientX > rect.right) return null;
+        const point = cursorInteraction.getSvgPoint({
+          clientX,
+          clientY
+        });
+        if (!point) return null;
+        const xFt = cursorInteraction.xToFeet(point.x);
+        if (xFt === null) return null;
+        const values = cursorInteraction.getSelectedValues(xFt);
+        cursorInteraction.render(values);
+        return values;
+      }
+    };
+
     function onReady() {
       els.spanSlider = document.getElementById("span-slider");
       els.spanNumber = document.getElementById("span-number");
@@ -1845,6 +2082,8 @@
       els.spanTag = document.getElementById("span-tag");
       els.useSectionButton = document.getElementById("use-section-button");
       els.sectionRecommendation = document.getElementById("section-recommendation");
+      els.svg = document.getElementById("beam-diagram");
+      els.clearCursor = document.getElementById("clear-cursor");
 
       els.material.innerHTML =
         '<option value="steel">Steel W-shapes</option>' +
@@ -1919,6 +2158,56 @@
         populateSectionOptions();
         els.section.value = name;
         validateAll();
+      });
+
+      els.clearCursor.addEventListener("click", () => cursorInteraction.clear());
+
+      els.svg.addEventListener("pointermove", (event) => {
+        if (state.cursor.pinned || !state.latestStage3 || !state.latestStage4) return;
+        state.cursor.hoverActive = true;
+        cursorInteraction.setFromClientPosition(event.clientX, event.clientY);
+      });
+
+      els.svg.addEventListener("pointerleave", () => {
+        if (!state.cursor.pinned) {
+          state.cursor.hoverActive = false;
+          cursorInteraction.clear();
+        }
+      });
+
+      els.svg.addEventListener("pointerdown", (event) => {
+        if (!state.latestStage3 || !state.latestStage4) return;
+        const values = cursorInteraction.setFromClientPosition(event.clientX, event.clientY);
+        if (values) {
+          state.cursor.xFt = values.xFt;
+          state.cursor.pinned = true;
+          els.svg.setPointerCapture?.(event.pointerId);
+        }
+      });
+
+      els.svg.addEventListener("keydown", (event) => {
+        const stage3 = state.latestStage3;
+        if (!stage3) return;
+
+        let x = state.cursor.xFt;
+        if (x === null) x = stage3.L / 2;
+
+        if (event.key === "ArrowLeft") x -= 0.001;
+        else if (event.key === "ArrowRight") x += 0.001;
+        else if (event.key === "Home") x = 0;
+        else if (event.key === "End") x = stage3.L;
+        else if (event.key === "Escape") {
+          cursorInteraction.clear();
+          event.preventDefault();
+          return;
+        } else return;
+
+        event.preventDefault();
+        x = Math.max(0, Math.min(stage3.L, x));
+        state.cursor.xFt = x;
+        state.cursor.pinned = true;
+        const values = cursorInteraction.getSelectedValues(x);
+        cursorInteraction.render(values);
       });
 
       els.addPointLoad.addEventListener("click", () => {
@@ -2243,11 +2532,24 @@
       if (valid) {
         const stage3Result = calculateStage3();
         if (stage3Result) {
+          state.latestStage3 = stage3Result;
           renderStage3(stage3Result);
           const stage4Result = calculateStage4(stage3Result);
-          if (stage4Result) renderStage4(stage3Result, stage4Result);
+          if (stage4Result) {
+            state.latestStage4 = stage4Result;
+            renderStage4(stage3Result, stage4Result);
+            if (state.cursor.xFt !== null) {
+              const values = cursorInteraction.getSelectedValues(state.cursor.xFt);
+              cursorInteraction.render(values);
+            }
+          } else {
+            state.latestStage4 = null;
+          }
         }
       } else {
+        state.latestStage3 = null;
+        state.latestStage4 = null;
+        cursorInteraction.clear();
         syncPlaceholderDrawing();
         document.getElementById("shear-static").style.display = "";
         document.getElementById("moment-static").style.display = "";
