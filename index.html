@@ -176,9 +176,36 @@
 
     .unit-row {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 68px;
+      grid-template-columns: minmax(0, 1fr) 120px;
       gap: 8px;
       align-items: center;
+    }
+
+    .numeric-control {
+      min-width: 0;
+    }
+
+    .numeric-control input {
+      width: 100%;
+    }
+
+    .numeric-step-controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      margin-top: 4px;
+    }
+
+    .numeric-step-controls button {
+      min-width: 44px;
+      min-height: 44px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: #fff;
+      color: #344054;
+      font-size: 15px;
+      font-weight: 800;
+      cursor: pointer;
     }
 
     input[type="range"] {
@@ -255,13 +282,13 @@
     }
 
     .remove-load {
-      width: 28px;
-      height: 28px;
+      min-width: 44px;
+      min-height: 44px;
       border: 0;
       border-radius: 7px;
       background: transparent;
       color: #98a2b3;
-      cursor: default;
+      cursor: pointer;
       font-size: 18px;
       line-height: 1;
     }
@@ -282,6 +309,11 @@
 
     .mini-field input {
       height: 38px;
+    }
+
+    .draggable-point-load {
+      cursor: ew-resize;
+      touch-action: none;
     }
 
     .add-load-row {
@@ -658,7 +690,17 @@
             <label class="field-label" for="span-slider">Span</label>
             <div class="unit-row">
               <input id="span-slider" type="range" min="4" max="40" step="0.5" value="20">
-              <input id="span-number" type="text" inputmode="decimal" value="20.000" aria-label="Span in feet" autocomplete="off">
+              <div class="numeric-control">
+                <input id="span-number" type="text" inputmode="decimal" value="20.000"
+                aria-label="Span in feet" aria-valuemin="4" aria-valuemax="40"
+                aria-valuestep="0.001" aria-valuenow="20" role="spinbutton"
+                data-step="0.001" data-min="4" data-max="40"
+                title="Use the step buttons or Up and Down arrow keys to change by 0.001 ft" autocomplete="off">
+                <div class="numeric-step-controls">
+                <button type="button" data-step-direction="-1" aria-label="Decrease span by 0.001 ft">−</button>
+                <button type="button" data-step-direction="1" aria-label="Increase span by 0.001 ft">+</button>
+                </div>
+              </div>
             </div>
             <div id="span-error" class="field-error" role="alert"></div>
           </div>
@@ -835,15 +877,8 @@
                 </g>
                 <g id="deflection-render"></g>
 
-                <!-- x-axis ticks -->
-                <g stroke="#344054" stroke-width="1" font-family="Inter, sans-serif" fill="#667085" font-size="10">
-                  <line x1="86" y1="468" x2="86" y2="474"/>
-                  <text x="86" y="488" text-anchor="middle" stroke="none">0</text>
-                  <line x1="400" y1="468" x2="400" y2="474"/>
-                  <text x="400" y="488" text-anchor="middle" stroke="none">10</text>
-                  <line x1="714" y1="468" x2="714" y2="474"/>
-                  <text x="714" y="488" text-anchor="middle" stroke="none">20 ft</text>
-                </g>
+                <g id="x-axis-ticks" stroke="#344054" stroke-width="1"
+                  font-family="Inter, sans-serif" fill="#667085" font-size="10"></g>
 
                 <g id="cursor-render" pointer-events="none" style="display:none">
                   <line id="cursor-line" x1="86" y1="20" x2="86" y2="488"
@@ -997,6 +1032,92 @@
     };
 
     const els = {};
+    const diagramX = {
+      left: 86,
+      right: 714,
+      toSvg(xFt, span) {
+        return this.left + (xFt / span) * (this.right - this.left);
+      },
+      toFeet(svgX, span) {
+        return ((svgX - this.left) / (this.right - this.left)) * span;
+      }
+    };
+
+    function axisTickValues(span) {
+      const targetStep = span / 6;
+      const magnitude = Math.pow(10, Math.floor(Math.log10(targetStep)));
+      const normalized = targetStep / magnitude;
+      const multiplier = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+      const step = multiplier * magnitude;
+      const ticks = [];
+      for (let x = 0; x < span - step * 0.25; x += step) {
+        ticks.push(Number(x.toFixed(9)));
+      }
+      if (!ticks.length || Math.abs(ticks[ticks.length - 1] - span) > 1e-9) {
+        ticks.push(span);
+      }
+      return ticks;
+    }
+
+    function renderXAxisTicks(span) {
+      const group = document.getElementById("x-axis-ticks");
+      group.replaceChildren();
+      axisTickValues(span).forEach((xFt, index, ticks) => {
+        const x = diagramX.toSvg(xFt, span);
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", x);
+        line.setAttribute("x2", x);
+        line.setAttribute("y1", "468");
+        line.setAttribute("y2", "474");
+        group.appendChild(line);
+
+        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.setAttribute("x", x);
+        label.setAttribute("y", "488");
+        label.setAttribute("text-anchor", "middle");
+        label.setAttribute("stroke", "none");
+        const isLast = index === ticks.length - 1;
+        label.textContent = `${formatAxisTick(xFt)}${isLast ? " ft" : ""}`;
+        group.appendChild(label);
+      });
+    }
+
+    function formatAxisTick(value) {
+      return String(Number(value.toFixed(3)));
+    }
+
+    function stepNumericInput(input, direction) {
+      const current = parseValidated(input.value);
+      if (!current.valid) return false;
+      const min = Number(input.dataset.min);
+      const max = Number(input.dataset.max);
+      const step = Number(input.dataset.step || 0.001);
+      if (!Number.isFinite(min) || !Number.isFinite(max) || !Number.isFinite(step)) return false;
+      if (current.value < min || current.value > max) return false;
+      const next = Math.max(min, Math.min(max,
+        Math.round((current.value + direction * step) * 1000) / 1000));
+      input.value = formatThree(next);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
+    }
+
+    function handleNumericStepKeydown(event) {
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+      const direction = event.key === "ArrowUp" ? 1 : -1;
+      if (stepNumericInput(event.target, direction)) event.preventDefault();
+    }
+
+    function handleNumericStepClick(event) {
+      const button = event.target.closest("[data-step-direction]");
+      if (!button) return false;
+      const input = button.closest(".numeric-control").querySelector("input[data-step]");
+      if (!input) return false;
+      event.preventDefault();
+      if (stepNumericInput(input, Number(button.dataset.stepDirection))) {
+        input.focus();
+      }
+      return true;
+    }
 
     // Stage 3 engineering calculation module. These functions intentionally
     // stop before deflection, stress, and section recommendations.
@@ -1010,6 +1131,7 @@
           const position = Number(load.position);
           if (!Number.isFinite(magnitude) || !Number.isFinite(position)) return null;
           return {
+            id: load.id,
             magnitude,
             position,
             signedMagnitude: load.direction === "down" ? magnitude : -magnitude
@@ -1570,10 +1692,9 @@
 
     // Stage 3 rendering module. It consumes calculation output only.
     function renderStage3(result) {
-      const beamLeft = 86;
-      const beamRight = 714;
-      const beamWidth = beamRight - beamLeft;
-      const beamX = (x) => beamLeft + (x / result.L) * beamWidth;
+      const beamLeft = diagramX.left;
+      const beamRight = diagramX.right;
+      const beamX = (x) => diagramX.toSvg(x, result.L);
 
       const beamLine = document.querySelector('line[x1="86"][y1="82"][x2="714"]');
       if (beamLine) beamLine.setAttribute("x2", String(beamRight));
@@ -1582,6 +1703,7 @@
       document.getElementById("beam-x-end").textContent = `${formatDisplay(result.L)} ft`;
       document.getElementById("beam-x-end").setAttribute("x", String(beamRight + 6));
       document.getElementById("span-tag").textContent = `${formatDisplay(result.L)} ft span`;
+      renderXAxisTicks(result.L);
 
       syncSupport();
 
@@ -1661,12 +1783,14 @@
         const labelY = downward ? 42 - pointRow * 12 : 92 + pointRow * 12;
         pointGroup.insertAdjacentHTML(
           "beforeend",
-          `<line x1="${x.toFixed(2)}" y1="${y1}" x2="${x.toFixed(2)}" y2="${y2}"
+          `<g data-point-load-id="${load.id}" class="draggable-point-load">
+          <line x1="${x.toFixed(2)}" y1="${y1}" x2="${x.toFixed(2)}" y2="${y2}"
             stroke="${downward ? "#2563eb" : "#15803d"}" stroke-width="2"
             marker-end="url(#${downward ? "arrow-down" : "arrow-up"})"/>
           <text x="${x.toFixed(2)}" y="${labelY}" text-anchor="middle"
             font-family="Inter, sans-serif" font-size="11" font-weight="800"
-            fill="${downward ? "#2563eb" : "#15803d"}">${formatDisplay(load.signedMagnitude)} k</text>`
+            fill="${downward ? "#2563eb" : "#15803d"}">${formatDisplay(load.signedMagnitude)} k</text>
+          </g>`
         );
       });
 
@@ -1827,10 +1951,7 @@
       const renderGroup = document.getElementById("deflection-render");
       if (staticGroup) staticGroup.style.display = "none";
 
-      const beamLeft = 86;
-      const beamRight = 714;
-      const beamWidth = beamRight - beamLeft;
-      const beamX = (xFt) => beamLeft + (xFt / stage3Result.L) * beamWidth;
+      const beamX = (xFt) => diagramX.toSvg(xFt, stage3Result.L);
       const zeroY = 468;
       const points = stage4Result.deflection.points
         .filter((point, index, array) =>
@@ -1953,6 +2074,26 @@
       return value.toFixed(2);
     }
 
+    let activePointLoadDrag = null;
+
+    function movePointLoadTo(clientX, clientY) {
+      if (!activePointLoadDrag || !state.latestStage3) return;
+      const point = cursorInteraction.getSvgPoint({ clientX, clientY });
+      if (!point) return;
+      const rawPosition = formatThree(Math.max(0, Math.min(
+        state.latestStage3.L,
+        Math.round(diagramX.toFeet(point.x, state.latestStage3.L) * 1000) / 1000
+      )));
+      const load = state.pointLoads.find((item) => item.id === activePointLoadDrag.id);
+      if (!load || load.position === rawPosition) return;
+      load.position = rawPosition;
+      const field = document.querySelector(
+        `.load-row[data-load-kind="point"][data-load-id="${load.id}"] [data-field="position"]`
+      );
+      if (field) field.value = rawPosition;
+      validateAll();
+    }
+
     const cursorInteraction = {
       positionTolerance: 1e-6,
       getSvgPoint(event) {
@@ -1960,15 +2101,16 @@
         if (!svg) return null;
         const rect = svg.getBoundingClientRect();
         if (!rect.width || !rect.height) return null;
+        const viewBox = svg.viewBox.baseVal;
         return {
-          x: ((event.clientX - rect.left) / rect.width) * 800,
-          y: ((event.clientY - rect.top) / rect.height) * 560
+          x: ((event.clientX - rect.left) / rect.width) * viewBox.width,
+          y: ((event.clientY - rect.top) / rect.height) * viewBox.height
         };
       },
       xToFeet(svgX) {
         const stage3 = state.latestStage3;
         if (!stage3) return null;
-        const feet = ((svgX - 86) / (714 - 86)) * stage3.L;
+        const feet = diagramX.toFeet(svgX, stage3.L);
         return Math.max(0, Math.min(stage3.L, feet));
       },
       findExactPointLoad(xFt) {
@@ -2019,7 +2161,7 @@
         if (!values || !cursor) return;
         const stage3 = state.latestStage3;
         if (!stage3) return;
-        const svgX = 86 + (values.xFt / stage3.L) * (714 - 86);
+        const svgX = diagramX.toSvg(values.xFt, stage3.L);
         cursor.style.display = "";
         line.setAttribute("x1", svgX.toFixed(3));
         line.setAttribute("x2", svgX.toFixed(3));
@@ -2132,6 +2274,7 @@
           validateAll();
         }
       });
+      els.spanNumber.addEventListener("keydown", handleNumericStepKeydown);
 
       els.material.addEventListener("change", () => {
         state.material = els.material.value;
@@ -2164,12 +2307,22 @@
       els.clearCursor.addEventListener("click", () => cursorInteraction.clear());
 
       els.svg.addEventListener("pointermove", (event) => {
+        if (activePointLoadDrag && event.pointerId === activePointLoadDrag.pointerId) {
+          if (Math.abs(event.clientX - activePointLoadDrag.startClientX) >= 3) {
+            activePointLoadDrag.moved = true;
+          }
+          if (activePointLoadDrag.moved) {
+            movePointLoadTo(event.clientX, event.clientY);
+          }
+          return;
+        }
         if (state.cursor.pinned || !state.latestStage3 || !state.latestStage4) return;
         state.cursor.hoverActive = true;
         cursorInteraction.setFromClientPosition(event.clientX, event.clientY);
       });
 
       els.svg.addEventListener("pointerleave", () => {
+        if (activePointLoadDrag) return;
         if (!state.cursor.pinned) {
           state.cursor.hoverActive = false;
           cursorInteraction.clear();
@@ -2178,11 +2331,44 @@
 
       els.svg.addEventListener("pointerdown", (event) => {
         if (!state.latestStage3 || !state.latestStage4) return;
+        const marker = event.target.closest("[data-point-load-id]");
+        if (marker && (event.pointerType !== "mouse" || event.button === 0)) {
+          event.preventDefault();
+          activePointLoadDrag = {
+            id: Number(marker.dataset.pointLoadId),
+            pointerId: event.pointerId,
+            startClientX: event.clientX,
+            moved: false
+          };
+          els.svg.setPointerCapture?.(event.pointerId);
+          return;
+        }
         const values = cursorInteraction.setFromClientPosition(event.clientX, event.clientY);
         if (values) {
           state.cursor.xFt = values.xFt;
           state.cursor.pinned = true;
           els.svg.setPointerCapture?.(event.pointerId);
+        }
+      });
+
+      els.svg.addEventListener("pointerup", (event) => {
+        if (!activePointLoadDrag || event.pointerId !== activePointLoadDrag.pointerId) return;
+        const drag = activePointLoadDrag;
+        if (drag.moved) {
+          movePointLoadTo(event.clientX, event.clientY);
+        } else {
+          const values = cursorInteraction.setFromClientPosition(event.clientX, event.clientY);
+          if (values) {
+            state.cursor.xFt = values.xFt;
+            state.cursor.pinned = true;
+          }
+        }
+        activePointLoadDrag = null;
+      });
+
+      els.svg.addEventListener("pointercancel", (event) => {
+        if (activePointLoadDrag && event.pointerId === activePointLoadDrag.pointerId) {
+          activePointLoadDrag = null;
         }
       });
 
@@ -2247,6 +2433,7 @@
       });
 
       els.loadsContainer.addEventListener("click", (event) => {
+        if (handleNumericStepClick(event)) return;
         const removeButton = event.target.closest("[data-remove-load]");
         if (!removeButton) return;
         const kind = removeButton.dataset.removeLoad;
@@ -2262,6 +2449,9 @@
 
       els.loadsContainer.addEventListener("input", handleLoadInput);
       els.loadsContainer.addEventListener("change", handleLoadInput);
+      els.loadsContainer.addEventListener("keydown", handleNumericStepKeydown);
+      els.spanNumber.closest(".numeric-control")
+        .addEventListener("click", handleNumericStepClick);
 
       syncSupport();
       populateSectionOptions();
@@ -2369,8 +2559,17 @@
               <div class="load-grid">
                 <div class="mini-field">
                   <label>Magnitude · kips</label>
-                  <input type="text" inputmode="decimal" autocomplete="off"
-                    value="${escapeHtml(load.magnitude)}" data-field="magnitude">
+                  <div class="numeric-control">
+                    <input type="text" inputmode="decimal" autocomplete="off" role="spinbutton"
+                      aria-label="Point-load magnitude in kips" aria-valuemin="0" aria-valuemax="100"
+                      aria-valuestep="0.001" data-step="0.001" data-min="0" data-max="100"
+                      title="Use the step buttons or Up and Down arrow keys to change by 0.001"
+                      value="${escapeHtml(load.magnitude)}" data-field="magnitude">
+                    <div class="numeric-step-controls">
+                      <button type="button" data-step-direction="-1" aria-label="Decrease point-load magnitude by 0.001 kip">−</button>
+                      <button type="button" data-step-direction="1" aria-label="Increase point-load magnitude by 0.001 kip">+</button>
+                    </div>
+                  </div>
                   <div class="field-error" data-error-field="magnitude" role="alert"></div>
                 </div>
                 <div class="mini-field">
@@ -2382,8 +2581,17 @@
                 </div>
                 <div class="mini-field">
                   <label>Position · ft</label>
-                  <input type="text" inputmode="decimal" autocomplete="off"
-                    value="${escapeHtml(load.position)}" data-field="position">
+                  <div class="numeric-control">
+                    <input type="text" inputmode="decimal" autocomplete="off" role="spinbutton"
+                      aria-label="Point-load position in feet" aria-valuemin="0" aria-valuemax="${state.span ?? 40}"
+                      aria-valuestep="0.001" data-step="0.001" data-min="0" data-max="${state.span ?? 40}"
+                      title="Use the step buttons or Up and Down arrow keys to change by 0.001"
+                      value="${escapeHtml(load.position)}" data-field="position">
+                    <div class="numeric-step-controls">
+                      <button type="button" data-step-direction="-1" aria-label="Decrease point-load position by 0.001 ft">−</button>
+                      <button type="button" data-step-direction="1" aria-label="Increase point-load position by 0.001 ft">+</button>
+                    </div>
+                  </div>
                   <div class="field-error" data-error-field="position" role="alert"></div>
                 </div>
               </div>
@@ -2400,8 +2608,17 @@
             <div class="load-grid">
               <div class="mini-field">
                 <label>Magnitude · kip/ft</label>
-                <input type="text" inputmode="decimal" autocomplete="off"
-                  value="${escapeHtml(load.magnitude)}" data-field="magnitude">
+                <div class="numeric-control">
+                  <input type="text" inputmode="decimal" autocomplete="off" role="spinbutton"
+                    aria-label="Uniform-load magnitude in kips per foot" aria-valuemin="0" aria-valuemax="10"
+                    aria-valuestep="0.001" data-step="0.001" data-min="0" data-max="10"
+                    title="Use the step buttons or Up and Down arrow keys to change by 0.001"
+                    value="${escapeHtml(load.magnitude)}" data-field="magnitude">
+                  <div class="numeric-step-controls">
+                    <button type="button" data-step-direction="-1" aria-label="Decrease uniform-load magnitude by 0.001 kip per foot">−</button>
+                    <button type="button" data-step-direction="1" aria-label="Increase uniform-load magnitude by 0.001 kip per foot">+</button>
+                  </div>
+                </div>
                 <div class="field-error" data-error-field="magnitude" role="alert"></div>
               </div>
               <div class="mini-field">
@@ -2413,14 +2630,32 @@
               </div>
               <div class="mini-field">
                 <label>Start · ft</label>
-                <input type="text" inputmode="decimal" autocomplete="off"
-                  value="${escapeHtml(load.start)}" data-field="start">
+                <div class="numeric-control">
+                  <input type="text" inputmode="decimal" autocomplete="off" role="spinbutton"
+                    aria-label="Uniform-load start position in feet" aria-valuemin="0" aria-valuemax="${state.span ?? 40}"
+                    aria-valuestep="0.001" data-step="0.001" data-min="0" data-max="${state.span ?? 40}"
+                    title="Use the step buttons or Up and Down arrow keys to change by 0.001"
+                    value="${escapeHtml(load.start)}" data-field="start">
+                  <div class="numeric-step-controls">
+                    <button type="button" data-step-direction="-1" aria-label="Decrease uniform-load start by 0.001 ft">−</button>
+                    <button type="button" data-step-direction="1" aria-label="Increase uniform-load start by 0.001 ft">+</button>
+                  </div>
+                </div>
                 <div class="field-error" data-error-field="start" role="alert"></div>
               </div>
               <div class="mini-field">
                 <label>End · ft</label>
-                <input type="text" inputmode="decimal" autocomplete="off"
-                  value="${escapeHtml(load.end)}" data-field="end">
+                <div class="numeric-control">
+                  <input type="text" inputmode="decimal" autocomplete="off" role="spinbutton"
+                    aria-label="Uniform-load end position in feet" aria-valuemin="0" aria-valuemax="${state.span ?? 40}"
+                    aria-valuestep="0.001" data-step="0.001" data-min="0" data-max="${state.span ?? 40}"
+                    title="Use the step buttons or Up and Down arrow keys to change by 0.001"
+                    value="${escapeHtml(load.end)}" data-field="end">
+                  <div class="numeric-step-controls">
+                    <button type="button" data-step-direction="-1" aria-label="Decrease uniform-load end by 0.001 ft">−</button>
+                    <button type="button" data-step-direction="1" aria-label="Increase uniform-load end by 0.001 ft">+</button>
+                  </div>
+                </div>
                 <div class="field-error" data-error-field="end" role="alert"></div>
               </div>
             </div>
@@ -2470,13 +2705,24 @@
 
     function validateAll() {
       let valid = true;
-      const errors = [];
-
-      if (!state.span) {
-        valid = false;
-        errors.push("Span");
-      } else {
+      const spanResult = validateNumericText(
+        state.spanRaw,
+        "Span",
+        4,
+        40,
+        false,
+        els.spanError
+      );
+      state.span = spanResult.valid ? spanResult.value : null;
+      els.spanNumber.classList.toggle("input-error", !spanResult.valid);
+      els.spanNumber.setAttribute("aria-invalid", String(!spanResult.valid));
+      if (spanResult.valid) {
+        els.spanNumber.setAttribute("aria-valuenow", String(spanResult.value));
         els.spanTag.textContent = `${formatThree(state.span)} ft span`;
+      } else {
+        els.spanNumber.removeAttribute("aria-valuenow");
+        els.spanTag.textContent = "— ft span";
+        valid = false;
       }
 
       document.querySelectorAll(".load-row").forEach((row) => {
@@ -2502,9 +2748,14 @@
             result = validateNumericText(load[fieldName], fieldName === "start" ? "Start" : "End", 0, state.span ?? 40, false, errorElement);
           }
           input.classList.toggle("input-error", !result.valid);
+          input.setAttribute("aria-invalid", String(!result.valid));
+          if (result.valid) {
+            input.setAttribute("aria-valuenow", String(result.value));
+          } else {
+            input.removeAttribute("aria-valuenow");
+          }
           if (!result.valid) {
             valid = false;
-            errors.push(`${kind} load ${fieldName}`);
           }
         });
 
@@ -2516,11 +2767,12 @@
           if (startResult.valid && endResult.valid) {
             if (startResult.value >= endResult.value) {
               valid = false;
-              errors.push("Uniform interval");
               startError.textContent = "Start must be less than end.";
               endError.textContent = "End must be greater than start.";
               row.querySelector('[data-field="start"]').classList.add("input-error");
               row.querySelector('[data-field="end"]').classList.add("input-error");
+              row.querySelector('[data-field="start"]').setAttribute("aria-invalid", "true");
+              row.querySelector('[data-field="end"]').setAttribute("aria-invalid", "true");
             }
           }
         }
@@ -2528,39 +2780,33 @@
 
       syncSupport();
       syncLoadLimitMessage();
-      renderUnavailable(valid, errors);
       syncPlaceholderDrawing();
-      if (valid) {
-        const stage3Result = calculateStage3();
-        if (stage3Result) {
-          state.latestStage3 = stage3Result;
-          renderStage3(stage3Result);
-          const stage4Result = calculateStage4(stage3Result);
-          if (stage4Result) {
-            state.latestStage4 = stage4Result;
-            renderStage4(stage3Result, stage4Result);
-            if (state.cursor.xFt !== null) {
-              const values = cursorInteraction.getSelectedValues(state.cursor.xFt);
-              cursorInteraction.render(values);
-            }
-          } else {
-            state.latestStage4 = null;
-          }
-        }
-      } else {
+      if (!valid) {
         state.latestStage3 = null;
         state.latestStage4 = null;
-        cursorInteraction.clear();
-        syncPlaceholderDrawing();
-        document.getElementById("shear-static").style.display = "";
-        document.getElementById("moment-static").style.display = "";
-        document.getElementById("deflection-static").style.display = "";
-        document.getElementById("shear-render").innerHTML = "";
-        document.getElementById("moment-render").innerHTML = "";
-        document.getElementById("deflection-render").innerHTML = "";
-        document.getElementById("section-recommendation").textContent =
-          "Unavailable until calculations";
-        document.getElementById("use-section-button").disabled = true;
+        clearCalculatedDrawings();
+        renderUnavailable("Calculated results unavailable: correct the highlighted inputs.");
+        return false;
+      }
+
+      const stage3Result = calculateStage3();
+      const stage4Result = stage3Result ? calculateStage4(stage3Result) : null;
+      if (!stage3Result || !stage4Result) {
+        state.latestStage3 = null;
+        state.latestStage4 = null;
+        clearCalculatedDrawings();
+        renderUnavailable("Calculated results unavailable.");
+        return false;
+      }
+
+      state.latestStage3 = stage3Result;
+      state.latestStage4 = stage4Result;
+      renderStage3(stage3Result);
+      renderStage4(stage3Result, stage4Result);
+      if (state.cursor.xFt !== null) {
+        state.cursor.xFt = Math.max(0, Math.min(stage3Result.L, state.cursor.xFt));
+        const values = cursorInteraction.getSelectedValues(state.cursor.xFt);
+        cursorInteraction.render(values);
       }
       return valid;
     }
@@ -2578,15 +2824,31 @@
     }
 
     function syncLoadLimitMessage() {
-      els.loadLimitError.textContent = "";
+      const messages = [];
       if (state.pointLoads.length >= 20) {
-        els.loadLimitError.textContent = "Maximum of 20 point loads reached.";
-      } else if (state.uniformLoads.length >= 10) {
-        els.loadLimitError.textContent = "Maximum of 10 uniform loads reached.";
+        messages.push("Maximum of 20 point loads reached.");
       }
+      if (state.uniformLoads.length >= 10) {
+        messages.push("Maximum of 10 uniform loads reached.");
+      }
+      els.loadLimitError.textContent = messages.join(" ");
     }
 
-    function renderUnavailable(valid, errors) {
+    function clearCalculatedDrawings() {
+      cursorInteraction.clear();
+      syncPlaceholderDrawing();
+      document.getElementById("uniform-load-render").innerHTML = "";
+      document.getElementById("point-load-render").innerHTML = "";
+      document.getElementById("shear-static").style.display = "";
+      document.getElementById("moment-static").style.display = "";
+      document.getElementById("deflection-static").style.display = "";
+      document.getElementById("shear-render").innerHTML = "";
+      document.getElementById("moment-render").innerHTML = "";
+      document.getElementById("deflection-render").innerHTML = "";
+      document.getElementById("x-axis-ticks").replaceChildren();
+    }
+
+    function renderUnavailable(message) {
       const status = els.calculationStatus;
       const statuses = [
         document.getElementById("bending-status"),
@@ -2601,36 +2863,25 @@
         "deflection-ratio"
       ];
 
-      if (!valid) {
-        status.className = "status-banner invalid";
-        status.textContent = "Calculated results unavailable: correct the highlighted inputs.";
-        statuses.forEach((item) => {
-          item.className = "status-pill status-neutral";
-          item.textContent = "UNAVAILABLE";
-        });
-        actualAllowableIds.forEach((id) => {
-          document.getElementById(id).textContent =
-            id.endsWith("ratio") ? "Unavailable" : "—";
-        });
-      } else {
-        status.className = "status-banner";
-        status.textContent = "Stage 3 results available. Deflection and design checks remain unavailable.";
-        statuses.forEach((item) => {
-          item.className = "status-pill status-neutral";
-          item.textContent = "UNAVAILABLE";
-        });
-        document.getElementById("bending-actual").textContent = "— ksi";
-        document.getElementById("bending-allowable").textContent = "— ksi";
-        document.getElementById("bending-ratio").textContent = "Placeholder";
-        document.getElementById("deflection-actual").textContent = "— in";
-        document.getElementById("deflection-allowable").textContent = "— in";
-        document.getElementById("deflection-ratio").textContent = "Placeholder";
-      }
+      status.className = "status-banner invalid";
+      status.textContent = message;
+      statuses.forEach((item) => {
+        item.className = "status-pill status-neutral";
+        item.textContent = "UNAVAILABLE";
+      });
+      actualAllowableIds.forEach((id) => {
+        document.getElementById(id).textContent =
+          id.endsWith("ratio") ? "Unavailable" : "—";
+      });
 
       document.getElementById("bending-ratio-fill").style.width = "0%";
       document.getElementById("bending-ratio-fill").style.background = "#98a2b3";
       document.getElementById("deflection-ratio-fill").style.width = "0%";
       document.getElementById("deflection-ratio-fill").style.background = "#98a2b3";
+      document.getElementById("section-recommendation").textContent =
+        "Unavailable until calculations";
+      document.getElementById("use-section-button").disabled = true;
+      document.getElementById("use-section-button").classList.add("is-disabled");
     }
 
     function syncPlaceholderDrawing() {
