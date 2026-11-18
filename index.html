@@ -403,6 +403,11 @@
       color: var(--red);
     }
 
+    .status-warning {
+      background: var(--amber-soft);
+      color: var(--amber);
+    }
+
     .check-values {
       margin: 14px 0 10px;
       display: grid;
@@ -752,13 +757,14 @@
                 <g id="moment-render"></g>
 
                 <!-- Deflection diagram -->
-                <g>
+                <g id="deflection-static">
                   <text x="716" y="468" text-anchor="end" font-family="Inter, sans-serif" font-size="10" fill="#98a2b3">in</text>
                   <line x1="86" y1="468" x2="714" y2="468" stroke="#98a2b3" stroke-width="1"/>
                   <path d="M86 468 Q400 520 714 468 Z" fill="#dbeafe" fill-opacity="0.7" stroke="#2563eb" stroke-width="2"/>
                   <line x1="400" y1="468" x2="400" y2="520" stroke="#2563eb" stroke-width="1" stroke-dasharray="3 4"/>
                   <text id="deflection-placeholder" x="400" y="542" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#2563eb">PLACEHOLDER</text>
                 </g>
+                <g id="deflection-render"></g>
 
                 <!-- x-axis ticks -->
                 <g stroke="#344054" stroke-width="1" font-family="Inter, sans-serif" fill="#667085" font-size="10">
@@ -827,9 +833,9 @@
         <article class="card results-card">
           <div class="recommendation">
             <div class="recommendation-copy">
-              Section recommendation: <strong>Unavailable until calculations</strong>
+              Section recommendation: <strong id="section-recommendation">Unavailable until calculations</strong>
             </div>
-            <button class="primary-button" type="button" style="width:auto;padding:0 16px">Use this section</button>
+            <button id="use-section-button" class="primary-button" type="button" style="width:auto;padding:0 16px" disabled>Use this section</button>
           </div>
         </article>
       </section>
@@ -870,6 +876,20 @@
         defaultSection: "2x8",
         sections: ["2x8", "2x10", "2x12"]
       }
+    };
+
+    const sectionProperties = {
+      "W8x10":  { E: 29000, Ix: 30.8,  Sx: 7.81,  weight: 10 },
+      "W10x12": { E: 29000, Ix: 53.8,  Sx: 10.9,  weight: 12 },
+      "W12x26": { E: 29000, Ix: 204,   Sx: 33.4,  weight: 26 },
+      "W14x22": { E: 29000, Ix: 199,   Sx: 29.0,  weight: 22 },
+      "W16x26": { E: 29000, Ix: 301,   Sx: 38.4,  weight: 26 },
+      "W18x35": { E: 29000, Ix: 510,   Sx: 57.6,  weight: 35 },
+      "W21x44": { E: 29000, Ix: 843,   Sx: 81.6,  weight: 44 },
+      "W24x55": { E: 29000, Ix: 1350,  Sx: 114,   weight: 55 },
+      "2x8":     { E: 1600,  Ix: 47.63, Sx: 13.14 },
+      "2x10":    { E: 1600,  Ix: 98.93, Sx: 21.39 },
+      "2x12":    { E: 1600,  Ix: 177.98, Sx: 31.64 }
     };
 
     const els = {};
@@ -1117,6 +1137,333 @@
       return Array.from(groups.values());
     }
 
+    // Stage 4 calculation module.
+    function trimPolynomial(coefficients) {
+      const result = coefficients.slice();
+      while (result.length > 1 && Math.abs(result[result.length - 1]) < 1e-12) {
+        result.pop();
+      }
+      return result;
+    }
+
+    function evaluatePolynomial(coefficients, x) {
+      let value = 0;
+      for (let i = coefficients.length - 1; i >= 0; i--) {
+        value = value * x + coefficients[i];
+      }
+      return value;
+    }
+
+    function deduplicateRoots(roots, a, b) {
+      const tolerance = 1e-7;
+      const result = [];
+      roots.sort((x, y) => x - y);
+      roots.forEach((root) => {
+        if (!Number.isFinite(root) || root < a - tolerance || root > b + tolerance) return;
+        const clipped = Math.max(a, Math.min(b, root));
+        if (!result.length || Math.abs(clipped - result[result.length - 1]) > tolerance) {
+          result.push(clipped);
+        }
+      });
+      return result;
+    }
+
+    function quadraticRoots(coefficients, a, b) {
+      const c = coefficients[0] || 0;
+      const b1 = coefficients.length > 1 ? coefficients[1] : 0;
+      const a1 = coefficients.length > 2 ? coefficients[2] : 0;
+      if (Math.abs(a1) < 1e-12) {
+        if (Math.abs(b1) < 1e-12) return [];
+        return [deduplicateRoot(-c / b1, a, b)];
+      }
+      const discriminant = b1 * b1 - 4 * a1 * c;
+      if (discriminant < -1e-9 * Math.max(1, b1 * b1, Math.abs(4 * a1 * c))) return [];
+      const sqrt = Math.sqrt(Math.max(0, discriminant));
+      return [
+        deduplicateRoot((-b1 - sqrt) / (2 * a1), a, b),
+        deduplicateRoot((-b1 + sqrt) / (2 * a1), a, b)
+      ].filter((root) => root !== null);
+    }
+
+    function deduplicateRoot(root, a, b) {
+      if (!Number.isFinite(root) || root < a - 1e-7 || root > b + 1e-7) return null;
+      return Math.max(a, Math.min(b, root));
+    }
+
+    function realRootsInInterval(rawCoefficients, a, b) {
+      let coefficients = trimPolynomial(rawCoefficients);
+      const scale = Math.max(1, ...coefficients.map((value) => Math.abs(value)));
+      const tolerance = 1e-10 * scale;
+      coefficients = coefficients.map((value) =>
+        Math.abs(value) < tolerance ? 0 : value
+      );
+      coefficients = trimPolynomial(coefficients);
+      const degree = coefficients.length - 1;
+
+      if (degree <= 0) return [];
+      if (degree === 1) {
+        const root = -coefficients[0] / coefficients[1];
+        return deduplicateRoots([root], a, b);
+      }
+      if (degree === 2) {
+        return deduplicateRoots(quadraticRoots(coefficients, a, b).filter((root) => root !== null), a, b);
+      }
+
+      const derivative = [
+        coefficients[1],
+        2 * coefficients[2],
+        3 * coefficients[3]
+      ];
+      const critical = quadraticRoots(derivative, a, b).filter((root) => root !== null);
+      const points = deduplicateRoots([a, b, ...critical], a, b);
+      const roots = [];
+
+      points.forEach((point) => {
+        if (Math.abs(evaluatePolynomial(coefficients, point)) <=
+          1e-8 * scale * (1 + Math.abs(point))) {
+          roots.push(point);
+        }
+      });
+
+      // Sign-change isolation after derivative critical points.
+      for (let i = 0; i < points.length - 1; i++) {
+        let left = points[i];
+        let right = points[i + 1];
+        let fLeft = evaluatePolynomial(coefficients, left);
+        let fRight = evaluatePolynomial(coefficients, right);
+        if (Math.abs(fLeft) <= 1e-10 * scale) continue;
+        if (fLeft * fRight >= 0) continue;
+        for (let iteration = 0; iteration < 100; iteration++) {
+          const middle = (left + right) / 2;
+          const fMiddle = evaluatePolynomial(coefficients, middle);
+          if (right - left < 1e-9) {
+            roots.push(middle);
+            break;
+          }
+          if ((fLeft > 0 && fMiddle > 0) || (fLeft < 0 && fMiddle < 0)) {
+            left = middle;
+            fLeft = fMiddle;
+          } else {
+            right = middle;
+            fRight = fMiddle;
+          }
+        }
+      }
+
+      return deduplicateRoots(roots, a, b);
+    }
+
+    function fitQuadraticMoment(stage3Result, x0In, x1In) {
+      const h = x1In - x0In;
+      if (h <= 1e-9) return [0, 0, 0];
+      const m0 = stage3Result.momentAt(x0In / 12) * 12;
+      const mh = stage3Result.momentAt((x0In + h / 2) / 12) * 12;
+      const m1 = stage3Result.momentAt(x1In / 12) * 12;
+      const c0 = m0;
+      const c2 = (m1 - 2 * mh + m0) / (h * h);
+      const c1 = (mh - c0 - c2 * h * h / 4) * 2 / h;
+      return [c0, c1, c2];
+    }
+
+    function integrateElasticCurve(stage3Result, section, theta0) {
+      const EI = section.E * section.Ix;
+      let thetaStart = theta0;
+      let yStart = 0;
+      const segments = [];
+
+      for (let i = 0; i < stage3Result.breakList.length - 1; i++) {
+        const x0Ft = stage3Result.breakList[i];
+        const x1Ft = stage3Result.breakList[i + 1];
+        const x0In = x0Ft * 12;
+        const x1In = x1Ft * 12;
+        const h = x1In - x0In;
+        const moment = fitQuadraticMoment(stage3Result, x0In, x1In);
+        const curvature = moment.map((coefficient) => -coefficient / EI);
+
+        const slopeCoefficients = [
+          thetaStart,
+          curvature[0],
+          curvature[1] / 2,
+          curvature[2] / 3
+        ];
+        const displacementCoefficients = [
+          yStart,
+          thetaStart,
+          curvature[0] / 2,
+          curvature[1] / 6,
+          curvature[2] / 12
+        ];
+
+        const thetaEnd = evaluatePolynomial(slopeCoefficients, h);
+        const yEnd = evaluatePolynomial(displacementCoefficients, h);
+        segments.push({
+          x0In,
+          x1In,
+          h,
+          slopeCoefficients,
+          displacementCoefficients
+        });
+        thetaStart = thetaEnd;
+        yStart = yEnd;
+      }
+
+      return {
+        EI,
+        segments,
+        thetaStart: theta0,
+        thetaEnd: thetaStart,
+        yEnd: yStart
+      };
+    }
+
+    function solveDeflection(stage3Result, section) {
+      let initialSlope = 0;
+      let segments;
+
+      if (state.support === "simply-supported") {
+        const zeroSlope = integrateElasticCurve(stage3Result, section, 0);
+        const unitSlope = integrateElasticCurve(stage3Result, section, 1);
+        const denominator = unitSlope.yEnd - zeroSlope.yEnd;
+        if (Math.abs(denominator) > 1e-12) {
+          initialSlope = -zeroSlope.yEnd / denominator;
+        }
+      }
+
+      const curve = integrateElasticCurve(stage3Result, section, initialSlope);
+      const candidates = [0, stage3Result.L * 12];
+
+      curve.segments.forEach((segment) => {
+        candidates.push(segment.x0In, segment.x1In);
+        const slopeRoots = realRootsInInterval(
+          segment.slopeCoefficients,
+          0,
+          segment.h
+        );
+        slopeRoots.forEach((root) => candidates.push(segment.x0In + root));
+      });
+
+      const tolerance = 1e-6;
+      const uniqueCandidates = [];
+      candidates
+        .sort((a, b) => a - b)
+        .forEach((candidate) => {
+          const clipped = Math.max(0, Math.min(stage3Result.L * 12, candidate));
+          if (!uniqueCandidates.length ||
+              Math.abs(clipped - uniqueCandidates[uniqueCandidates.length - 1]) > tolerance) {
+            uniqueCandidates.push(clipped);
+          }
+        });
+
+      let maximum = { y: 0, xIn: 0 };
+      uniqueCandidates.forEach((xIn) => {
+        const y = evaluateDeflectionAt(curve, xIn);
+        if (Math.abs(y) > Math.abs(maximum.y)) {
+          maximum = { y, xIn };
+        }
+      });
+
+      const points = [];
+      for (let xIn = 0; xIn <= stage3Result.L * 12 + 1e-9; xIn += 12 * 0.25) {
+        const clamped = Math.min(stage3Result.L * 12, xIn);
+        points.push({ xIn: clamped, y: evaluateDeflectionAt(curve, clamped) });
+      }
+      curve.segments.forEach((segment) => {
+        segment.x0In;
+        points.push({ xIn: segment.x0In, y: evaluateDeflectionAt(curve, segment.x0In) });
+        points.push({ xIn: segment.x1In, y: evaluateDeflectionAt(curve, segment.x1In) });
+      });
+
+      return {
+        ...curve,
+        yMaxAbsolute: Math.abs(maximum.y),
+        yMaxSigned: maximum.y,
+        yMaxXIn: maximum.xIn,
+        yMaxXFt: maximum.xIn / 12,
+        points
+      };
+    }
+
+    function evaluateDeflectionAt(curve, xIn) {
+      for (let i = 0; i < curve.segments.length; i++) {
+        const segment = curve.segments[i];
+        if (xIn >= segment.x0In - 1e-7 && xIn <= segment.x1In + 1e-7) {
+          const local = Math.max(0, Math.min(segment.h, xIn - segment.x0In));
+          return evaluatePolynomial(segment.displacementCoefficients, local);
+        }
+      }
+      return 0;
+    }
+
+    function calculateStage4(stage3Result) {
+      const section = sectionProperties[state.section];
+      if (!section) return null;
+
+      const deflection = solveDeflection(stage3Result, section);
+      const momentMaxAbsoluteKipFt = Math.max(
+        Math.abs(stage3Result.momentMax.value),
+        Math.abs(stage3Result.momentMin.value)
+      );
+      const momentMaxAbsoluteKipIn = momentMaxAbsoluteKipFt * 12;
+      const bendingStress = momentMaxAbsoluteKipIn / section.Sx;
+      const allowableStress = state.material === "steel" ? 30 : 0.900;
+      const spanIn = stage3Result.L * 12;
+      const divisor = state.deflectionLimit === "240" ? 240 : 360;
+      const allowableDeflection = spanIn / divisor;
+      const bendingPass = bendingStress <= allowableStress + 1e-12;
+      const deflectionPass = deflection.yMaxAbsolute <= allowableDeflection + 1e-9;
+      const bendingRatio = allowableStress > 0 ? (bendingStress / allowableStress) * 100 : 0;
+      const deflectionRatio = allowableDeflection > 0
+        ? (deflection.yMaxAbsolute / allowableDeflection) * 100
+        : 0;
+
+      const recommendation = findSectionRecommendation(stage3Result);
+      return {
+        deflection,
+        section,
+        momentMaxAbsoluteKipFt,
+        bendingStress,
+        allowableStress,
+        bendingPass,
+        allowableDeflection,
+        deflectionPass,
+        bendingRatio,
+        deflectionRatio,
+        recommendation
+      };
+    }
+
+    function findSectionRecommendation(stage3Result) {
+      const names = sectionsByMaterial[state.material].sections;
+      const passing = [];
+
+      names.forEach((name) => {
+        const properties = sectionProperties[name];
+        const momentKipIn = Math.max(
+          Math.abs(stage3Result.momentMax.value),
+          Math.abs(stage3Result.momentMin.value)
+        ) * 12;
+        const stress = momentKipIn / properties.Sx;
+        const allowableStress = state.material === "steel" ? 30 : 0.900;
+        const deflection = solveDeflection(stage3Result, properties);
+        const allowableDeflection =
+          (stage3Result.L * 12) / (state.deflectionLimit === "240" ? 240 : 360);
+        if (stress <= allowableStress + 1e-12 &&
+            deflection.yMaxAbsolute <= allowableDeflection + 1e-9) {
+          passing.push(name);
+        }
+      });
+
+      if (!passing.length) return null;
+      if (state.material === "lumber") return passing[0];
+
+      return passing.sort((a, b) => {
+        const pa = sectionProperties[a];
+        const pb = sectionProperties[b];
+        if (pa.weight !== pb.weight) return pa.weight - pb.weight;
+        return pb.Ix - pa.Ix;
+      })[0];
+    }
+
     // Stage 3 rendering module. It consumes calculation output only.
     function renderStage3(result) {
       const beamLeft = 86;
@@ -1339,6 +1686,127 @@
       `;
     }
 
+    function renderStage4(stage3Result, stage4Result) {
+      renderDeflectionDiagram(stage3Result, stage4Result);
+      renderDesignCards(stage4Result);
+      renderSectionRecommendation(stage4Result);
+
+      const status = els.calculationStatus;
+      status.className = "status-banner";
+      status.textContent = "Stage 4 results available.";
+      status.setAttribute("role", "status");
+    }
+
+    function renderDeflectionDiagram(stage3Result, stage4Result) {
+      const staticGroup = document.getElementById("deflection-static");
+      const renderGroup = document.getElementById("deflection-render");
+      if (staticGroup) staticGroup.style.display = "none";
+
+      const beamLeft = 86;
+      const beamRight = 714;
+      const beamWidth = beamRight - beamLeft;
+      const beamX = (xFt) => beamLeft + (xFt / stage3Result.L) * beamWidth;
+      const zeroY = 468;
+      const points = stage4Result.deflection.points
+        .filter((point, index, array) =>
+          index === 0 ||
+          Math.abs(point.xIn - array[index - 1].xIn) > 1e-6
+        )
+        .sort((a, b) => a.xIn - b.xIn);
+      const absMax = Math.max(
+        0.001,
+        stage4Result.deflection.yMaxAbsolute,
+        ...points.map((point) => Math.abs(point.y))
+      );
+      const scaleY = (yIn) => zeroY - (yIn / absMax) * 48;
+
+      let path = "";
+      points.forEach((point, index) => {
+        const x = beamX(point.xIn / 12);
+        const y = scaleY(point.y);
+        path += `${index === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)} `;
+      });
+
+      const maximumX = beamX(stage4Result.deflection.yMaxXFt);
+      const maximumY = scaleY(stage4Result.deflection.yMaxSigned);
+      renderGroup.innerHTML = `
+        <text x="716" y="468" text-anchor="end" font-family="Inter, sans-serif" font-size="10" fill="#98a2b3">in</text>
+        <line x1="${beamX(0)}" y1="${zeroY}" x2="${beamX(stage3Result.L)}" y2="${zeroY}" stroke="#98a2b3" stroke-width="1"/>
+        <path d="${path}L${beamX(stage3Result.L)} ${zeroY}L${beamX(0)} ${zeroY}Z"
+          fill="#dbeafe" fill-opacity="0.70" stroke="#2563eb" stroke-width="2"/>
+        <line x1="${maximumX.toFixed(2)}" y1="${maximumY.toFixed(2)}"
+          x2="${maximumX.toFixed(2)}" y2="${Math.max(468, maximumY - 18).toFixed(2)}"
+          stroke="#2563eb" stroke-width="1" stroke-dasharray="3 4"/>
+        <text x="${maximumX.toFixed(2)}" y="${(maximumY - 8).toFixed(2)}"
+          text-anchor="middle" font-family="Inter, sans-serif" font-size="10"
+          font-weight="800" fill="#2563eb">
+          |y|max ${formatDisplay(stage4Result.deflection.yMaxAbsolute)} in · ${formatDisplay(stage4Result.deflection.yMaxXFt)} ft
+        </text>
+      `;
+    }
+
+    function setRatioStatus(statusId, ratio, pass) {
+      const status = document.getElementById(statusId);
+      status.className = "status-pill ";
+      if (ratio >= 100) {
+        status.className += "status-fail";
+        status.textContent = pass ? "PASS" : "FAIL";
+      } else if (!pass) {
+        status.className += "status-fail";
+        status.textContent = "FAIL";
+      } else if (ratio >= 70) {
+        status.className += "status-warning";
+        status.textContent = "PASS";
+      } else {
+        status.className += "status-pass";
+        status.textContent = "PASS";
+      }
+    }
+
+    function setRatioBar(fillId, ratio, pass) {
+      const fill = document.getElementById(fillId);
+      fill.style.width = `${Math.max(0, Math.min(100, ratio)).toFixed(1)}%`;
+      if (ratio >= 100) fill.style.background = "#b42318";
+      else if (!pass) fill.style.background = "#b42318";
+      else if (ratio >= 70) fill.style.background = "#b45309";
+      else fill.style.background = "#15803d";
+    }
+
+    function renderDesignCards(stage4Result) {
+      document.getElementById("bending-actual").textContent =
+        `${formatDisplay(stage4Result.bendingStress)} ksi`;
+      document.getElementById("bending-allowable").textContent =
+        `${formatDisplay(stage4Result.allowableStress)} ksi`;
+      document.getElementById("bending-ratio").textContent =
+        `${formatDisplay(stage4Result.bendingRatio)}%`;
+
+      document.getElementById("deflection-actual").textContent =
+        `${formatDisplay(stage4Result.deflection.yMaxAbsolute)} in`;
+      document.getElementById("deflection-allowable").textContent =
+        `${formatDisplay(stage4Result.allowableDeflection)} in`;
+      document.getElementById("deflection-ratio").textContent =
+        `${formatDisplay(stage4Result.deflectionRatio)}%`;
+
+      setRatioStatus("bending-status", stage4Result.bendingRatio, stage4Result.bendingPass);
+      setRatioStatus("deflection-status", stage4Result.deflectionRatio, stage4Result.deflectionPass);
+      setRatioBar("bending-ratio-fill", stage4Result.bendingRatio, stage4Result.bendingPass);
+      setRatioBar("deflection-ratio-fill", stage4Result.deflectionRatio, stage4Result.deflectionPass);
+    }
+
+    function renderSectionRecommendation(stage4Result) {
+      const text = document.getElementById("section-recommendation");
+      const button = document.getElementById("use-section-button");
+      if (stage4Result.recommendation) {
+        text.textContent = stage4Result.recommendation;
+        button.disabled = false;
+        button.classList.remove("is-disabled");
+      } else {
+        text.textContent = "No available section passes.";
+        button.disabled = true;
+        button.classList.add("is-disabled");
+      }
+    }
+
     function renderExtremumLabel(item, kind, beamX, scaleY, prefix) {
       if (!item) return "";
       const x = beamX(item.x);
@@ -1375,6 +1843,8 @@
       els.loadLimitError = document.getElementById("load-limit-error");
       els.calculationStatus = document.getElementById("calculation-status");
       els.spanTag = document.getElementById("span-tag");
+      els.useSectionButton = document.getElementById("use-section-button");
+      els.sectionRecommendation = document.getElementById("section-recommendation");
 
       els.material.innerHTML =
         '<option value="steel">Steel W-shapes</option>' +
@@ -1436,6 +1906,18 @@
 
       els.section.addEventListener("change", () => {
         state.section = els.section.value;
+        validateAll();
+      });
+
+      els.useSectionButton.addEventListener("click", () => {
+        const name = els.sectionRecommendation.textContent;
+        if (!name || name === "No available section passes." ||
+            name === "Unavailable until calculations") return;
+        const table = sectionsByMaterial[state.material];
+        if (!table.sections.includes(name)) return;
+        state.section = name;
+        populateSectionOptions();
+        els.section.value = name;
         validateAll();
       });
 
@@ -1762,13 +2244,20 @@
         const stage3Result = calculateStage3();
         if (stage3Result) {
           renderStage3(stage3Result);
+          const stage4Result = calculateStage4(stage3Result);
+          if (stage4Result) renderStage4(stage3Result, stage4Result);
         }
       } else {
         syncPlaceholderDrawing();
         document.getElementById("shear-static").style.display = "";
         document.getElementById("moment-static").style.display = "";
+        document.getElementById("deflection-static").style.display = "";
         document.getElementById("shear-render").innerHTML = "";
         document.getElementById("moment-render").innerHTML = "";
+        document.getElementById("deflection-render").innerHTML = "";
+        document.getElementById("section-recommendation").textContent =
+          "Unavailable until calculations";
+        document.getElementById("use-section-button").disabled = true;
       }
       return valid;
     }
