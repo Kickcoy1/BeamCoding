@@ -1958,11 +1958,12 @@
       getSvgPoint(event) {
         const svg = document.getElementById("beam-diagram");
         if (!svg) return null;
-        const point = svg.createSVGPoint();
-        point.x = event.clientX;
-        point.y = event.clientY;
-        const matrix = svg.getScreenCTM();
-        return matrix ? point.matrixTransform(matrix.inverse()) : null;
+        const rect = svg.getBoundingClientRect();
+        if (!rect.width || !rect.height) return null;
+        return {
+          x: ((event.clientX - rect.left) / rect.width) * 800,
+          y: ((event.clientY - rect.top) / rect.height) * 560
+        };
       },
       xToFeet(svgX) {
         const stage3 = state.latestStage3;
