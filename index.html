@@ -447,6 +447,49 @@
       background: var(--green);
     }
 
+    .status-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      border: 1px solid #d6deeb;
+      border-radius: 9px;
+      background: #f8fafc;
+      color: #475467;
+      padding: 9px 11px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .status-banner.invalid {
+      border-color: #fecaca;
+      background: var(--red-soft);
+      color: var(--red);
+    }
+
+    .field-error {
+      min-height: 16px;
+      margin-top: 5px;
+      color: var(--red);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .input-error {
+      border-color: #f04438 !important;
+      background: #fffafa !important;
+    }
+
+    .status-neutral {
+      background: #eef2f6;
+      color: #475467;
+    }
+
+    .is-disabled {
+      opacity: 0.55;
+      cursor: not-allowed !important;
+    }
+
     .recommendation {
       margin-top: 16px;
       border: 1px solid #cfe0ff;
@@ -533,22 +576,23 @@
           <div class="field">
             <span class="group-label">Support type</span>
             <div class="segmented" aria-label="Support type">
-              <button class="segment selected" type="button">Simply supported</button>
-              <button class="segment" type="button">Cantilever</button>
+              <button class="segment selected" type="button" data-support="simply-supported">Simply supported</button>
+              <button class="segment" type="button" data-support="cantilever">Cantilever</button>
             </div>
           </div>
           <div class="field">
             <label class="field-label" for="span-slider">Span</label>
             <div class="unit-row">
               <input id="span-slider" type="range" min="4" max="40" step="0.5" value="20">
-              <input type="number" value="20.000" aria-label="Span in feet" step="0.001" min="4" max="40">
+              <input id="span-number" type="text" inputmode="decimal" value="20.000" aria-label="Span in feet" autocomplete="off">
             </div>
+            <div id="span-error" class="field-error" role="alert"></div>
           </div>
           <div class="field">
             <label class="field-label" for="deflection-limit">Deflection limit</label>
             <select id="deflection-limit">
-              <option>L/360</option>
-              <option>L/240</option>
+              <option value="360">L/360</option>
+              <option value="240">L/240</option>
             </select>
           </div>
         </section>
@@ -556,39 +600,14 @@
         <section class="panel-section">
           <div class="section-heading">
             <h2>Loads</h2>
-            <span class="count">1</span>
+            <span class="count" id="load-count">1</span>
           </div>
-          <div class="load-row">
-            <div class="load-row-header">
-              <span class="load-type">Uniform load</span>
-              <button class="remove-load" type="button" aria-label="Remove uniform load">×</button>
-            </div>
-            <div class="load-grid">
-              <div class="mini-field">
-                <label>Magnitude · kip/ft</label>
-                <input type="number" value="1.000" step="0.001" min="-10" max="10">
-              </div>
-              <div class="mini-field">
-                <label>Direction</label>
-                <select>
-                  <option>Down</option>
-                  <option>Up</option>
-                </select>
-              </div>
-              <div class="mini-field">
-                <label>Start · ft</label>
-                <input type="number" value="0.000" step="0.001" min="0" max="20">
-              </div>
-              <div class="mini-field">
-                <label>End · ft</label>
-                <input type="number" value="20.000" step="0.001" min="0" max="20">
-              </div>
-            </div>
-          </div>
+          <div id="loads-container"></div>
           <div class="add-load-row">
-            <button class="secondary-button" type="button">+ Point load</button>
-            <button class="secondary-button" type="button">+ Uniform load</button>
+            <button id="add-point-load" class="secondary-button" type="button">+ Point load</button>
+            <button id="add-uniform-load" class="secondary-button" type="button">+ Uniform load</button>
           </div>
+          <div id="load-limit-error" class="field-error" role="alert"></div>
         </section>
 
         <section class="panel-section">
@@ -622,8 +641,9 @@
         <article class="card results-card">
           <div class="card-title-row">
             <h2>Beam and diagrams</h2>
-            <span class="subtle-tag">20 ft span</span>
+            <span class="subtle-tag" id="span-tag">20 ft span</span>
           </div>
+          <div class="status-banner" id="calculation-status" role="status">Calculations unavailable in Stage 1. Static example values are placeholders.</div>
 
           <div class="drawing-scroll" aria-label="Beam drawing and diagrams">
             <div class="drawing-content">
@@ -654,23 +674,33 @@
                 <line x1="86" y1="82" x2="714" y2="82" stroke="#344054" stroke-width="8" stroke-linecap="round"/>
                 <line x1="86" y1="98" x2="714" y2="98" stroke="#d0d5dd" stroke-width="1"/>
 
-                <polygon points="86,98 70,118 102,118" fill="#fff" stroke="#344054" stroke-width="2"/>
-                <line x1="64" y1="118" x2="108" y2="118" stroke="#344054" stroke-width="2"/>
-                <line x1="70" y1="118" x2="62" y2="126" stroke="#344054" stroke-width="2"/>
-                <line x1="86" y1="118" x2="78" y2="126" stroke="#344054" stroke-width="2"/>
-                <line x1="102" y1="118" x2="94" y2="126" stroke="#344054" stroke-width="2"/>
-
-                <circle cx="714" cy="108" r="10" fill="#fff" stroke="#344054" stroke-width="2"/>
-                <line x1="704" y1="118" x2="724" y2="118" stroke="#344054" stroke-width="2"/>
-                <line x1="704" y1="118" x2="696" y2="126" stroke="#344054" stroke-width="2"/>
-                <line x1="714" y1="118" x2="706" y2="126" stroke="#344054" stroke-width="2"/>
-                <line x1="724" y1="118" x2="716" y2="126" stroke="#344054" stroke-width="2"/>
+                <g id="left-pin-support">
+                  <polygon points="86,98 70,118 102,118" fill="#fff" stroke="#344054" stroke-width="2"/>
+                  <line x1="64" y1="118" x2="108" y2="118" stroke="#344054" stroke-width="2"/>
+                  <line x1="70" y1="118" x2="62" y2="126" stroke="#344054" stroke-width="2"/>
+                  <line x1="86" y1="118" x2="78" y2="126" stroke="#344054" stroke-width="2"/>
+                  <line x1="102" y1="118" x2="94" y2="126" stroke="#344054" stroke-width="2"/>
+                </g>
+                <g id="fixed-left-support" style="display:none">
+                  <rect x="56" y="96" width="30" height="30" fill="#eef2f6" stroke="#344054" stroke-width="2"/>
+                  <line x1="56" y1="126" x2="86" y2="126" stroke="#344054" stroke-width="2"/>
+                  <line x1="56" y1="126" x2="48" y2="134" stroke="#344054" stroke-width="2"/>
+                  <line x1="68" y1="126" x2="60" y2="134" stroke="#344054" stroke-width="2"/>
+                  <line x1="80" y1="126" x2="72" y2="134" stroke="#344054" stroke-width="2"/>
+                </g>
+                <g id="right-roller-support">
+                  <circle cx="714" cy="108" r="10" fill="#fff" stroke="#344054" stroke-width="2"/>
+                  <line x1="704" y1="118" x2="724" y2="118" stroke="#344054" stroke-width="2"/>
+                  <line x1="704" y1="118" x2="696" y2="126" stroke="#344054" stroke-width="2"/>
+                  <line x1="714" y1="118" x2="706" y2="126" stroke="#344054" stroke-width="2"/>
+                  <line x1="724" y1="118" x2="716" y2="126" stroke="#344054" stroke-width="2"/>
+                </g>
 
                 <!-- Reactions -->
                 <path d="M86 76V42" stroke="#15803d" stroke-width="2" marker-end="url(#arrow-up)"/>
-                <text x="74" y="36" font-family="Inter, sans-serif" font-size="12" font-weight="800" fill="#15803d">10.00 k</text>
+                <text id="left-reaction-placeholder" x="74" y="36" font-family="Inter, sans-serif" font-size="12" font-weight="800" fill="#15803d">— k</text>
                 <path d="M714 76V42" stroke="#15803d" stroke-width="2" marker-end="url(#arrow-up)"/>
-                <text x="690" y="36" text-anchor="end" font-family="Inter, sans-serif" font-size="12" font-weight="800" fill="#15803d">10.00 k</text>
+                <text id="right-reaction-placeholder" x="690" y="36" text-anchor="end" font-family="Inter, sans-serif" font-size="12" font-weight="800" fill="#15803d">— k</text>
 
                 <!-- Uniform load arrows -->
                 <g stroke="#2563eb" fill="none" stroke-width="1.5" marker-end="url(#arrow-down)">
@@ -705,8 +735,8 @@
                   <line x1="86" y1="230" x2="714" y2="230" stroke="#2563eb" stroke-width="2"/>
                   <line x1="714" y1="230" x2="714" y2="176" stroke="#2563eb" stroke-width="2"/>
                   <path d="M86 176L86 230L714 230L714 176Z" fill="#dbeafe" fill-opacity="0.75"/>
-                  <text x="86" y="158" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#2563eb">+10.00</text>
-                  <text x="714" y="158" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#2563eb">-10.00</text>
+                  <text id="shear-placeholder-left" x="86" y="158" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#2563eb">PLACEHOLDER</text>
+                  <text id="shear-placeholder-right" x="714" y="158" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#2563eb">PLACEHOLDER</text>
                 </g>
 
                 <!-- Moment diagram -->
@@ -715,7 +745,7 @@
                   <line x1="86" y1="323" x2="714" y2="323" stroke="#98a2b3" stroke-width="1"/>
                   <path d="M86 323 Q400 238 714 323 Z" fill="#cce5ff" fill-opacity="0.85" stroke="#2563eb" stroke-width="2"/>
                   <line x1="400" y1="323" x2="400" y2="238" stroke="#2563eb" stroke-width="1" stroke-dasharray="3 4"/>
-                  <text x="400" y="219" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#2563eb">50.00 kip-ft · 10 ft</text>
+                  <text id="moment-placeholder" x="400" y="219" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#2563eb">PLACEHOLDER</text>
                 </g>
 
                 <!-- Deflection diagram -->
@@ -724,7 +754,7 @@
                   <line x1="86" y1="468" x2="714" y2="468" stroke="#98a2b3" stroke-width="1"/>
                   <path d="M86 468 Q400 520 714 468 Z" fill="#dbeafe" fill-opacity="0.7" stroke="#2563eb" stroke-width="2"/>
                   <line x1="400" y1="468" x2="400" y2="520" stroke="#2563eb" stroke-width="1" stroke-dasharray="3 4"/>
-                  <text x="400" y="542" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#2563eb">0.609 in · 10 ft</text>
+                  <text id="deflection-placeholder" x="400" y="542" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#2563eb">PLACEHOLDER</text>
                 </g>
 
                 <!-- x-axis ticks -->
@@ -745,48 +775,48 @@
           <article class="card check-card">
             <div class="check-header">
               <span class="check-title">Bending</span>
-              <span class="status-pill status-pass">✓ PASS</span>
+              <span class="status-pill status-neutral" id="bending-status">UNAVAILABLE</span>
             </div>
             <div class="check-values">
               <div>
                 <span>Actual</span>
-                <strong>17.96 ksi</strong>
+                <strong id="bending-actual">— ksi</strong>
               </div>
               <div>
                 <span>Allowable</span>
-                <strong>30.00 ksi</strong>
+                <strong id="bending-allowable">— ksi</strong>
               </div>
             </div>
             <div class="ratio-line">
               <span>Utilization</span>
-              <strong>59.9%</strong>
+              <strong id="bending-ratio">Placeholder</strong>
             </div>
             <div class="ratio-track" aria-label="Bending utilization 59.9 percent">
-              <div class="ratio-fill" style="width:59.9%"></div>
+              <div class="ratio-fill" id="bending-ratio-fill" style="width:0%;background:#98a2b3"></div>
             </div>
           </article>
 
           <article class="card check-card">
             <div class="check-header">
               <span class="check-title">Deflection</span>
-              <span class="status-pill status-pass">✓ PASS</span>
+              <span class="status-pill status-neutral" id="deflection-status">UNAVAILABLE</span>
             </div>
             <div class="check-values">
               <div>
                 <span>Actual</span>
-                <strong>0.609 in</strong>
+                <strong id="deflection-actual">— in</strong>
               </div>
               <div>
                 <span>Allowable</span>
-                <strong>0.667 in</strong>
+                <strong id="deflection-allowable">— in</strong>
               </div>
             </div>
             <div class="ratio-line">
               <span>Utilization</span>
-              <strong>91.3%</strong>
+              <strong id="deflection-ratio">Placeholder</strong>
             </div>
             <div class="ratio-track" aria-label="Deflection utilization 91.3 percent">
-              <div class="ratio-fill" style="width:91.3%;background:#b45309"></div>
+              <div class="ratio-fill" id="deflection-ratio-fill" style="width:0%;background:#98a2b3"></div>
             </div>
           </article>
         </div>
@@ -794,7 +824,7 @@
         <article class="card results-card">
           <div class="recommendation">
             <div class="recommendation-copy">
-              Lightest passing section: <strong>W12x26</strong>
+              Section recommendation: <strong>Unavailable until calculations</strong>
             </div>
             <button class="primary-button" type="button" style="width:auto;padding:0 16px">Use this section</button>
           </div>
@@ -804,14 +834,522 @@
   </main>
 
   <script>
-    /*
-     * Stage 1 intentionally contains no engineering calculations or functional
-     * load editing. Later stages can separate this script into:
-     * - app state and validation
-     * - engineering calculations
-     * - SVG/drawing rendering
-     * - interface event handlers
-     */
+    "use strict";
+
+    // Stage 2 state and validation. Engineering calculations are intentionally absent.
+    const state = {
+      support: "simply-supported",
+      spanRaw: "20.000",
+      span: 20,
+      deflectionLimit: "360",
+      material: "steel",
+      section: "W12x26",
+      pointLoads: [],
+      uniformLoads: [
+        {
+          id: 1,
+          magnitude: "1.000",
+          direction: "down",
+          start: "0.000",
+          end: "20.000",
+          endTracksSpan: true
+        }
+      ],
+      nextLoadId: 2
+    };
+
+    const sectionsByMaterial = {
+      steel: {
+        defaultSection: "W12x26",
+        sections: ["W8x10", "W10x12", "W12x26", "W14x22", "W16x26", "W18x35", "W21x44", "W24x55"]
+      },
+      lumber: {
+        defaultSection: "2x8",
+        sections: ["2x8", "2x10", "2x12"]
+      }
+    };
+
+    const els = {};
+
+    function onReady() {
+      els.spanSlider = document.getElementById("span-slider");
+      els.spanNumber = document.getElementById("span-number");
+      els.spanError = document.getElementById("span-error");
+      els.supportButtons = Array.from(document.querySelectorAll("[data-support]"));
+      els.deflectionLimit = document.getElementById("deflection-limit");
+      els.material = document.getElementById("material");
+      els.section = document.getElementById("section");
+      els.loadCount = document.getElementById("load-count");
+      els.loadsContainer = document.getElementById("loads-container");
+      els.addPointLoad = document.getElementById("add-point-load");
+      els.addUniformLoad = document.getElementById("add-uniform-load");
+      els.loadLimitError = document.getElementById("load-limit-error");
+      els.calculationStatus = document.getElementById("calculation-status");
+      els.spanTag = document.getElementById("span-tag");
+
+      els.material.innerHTML =
+        '<option value="steel">Steel W-shapes</option>' +
+        '<option value="lumber">Douglas Fir-Larch No. 2</option>';
+
+      els.deflectionLimit.addEventListener("change", () => {
+        state.deflectionLimit = els.deflectionLimit.value;
+        validateAll();
+      });
+
+      els.supportButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          state.support = button.dataset.support;
+          syncSupport();
+          validateAll();
+        });
+      });
+
+      els.spanSlider.addEventListener("input", () => {
+        state.spanRaw = formatThree(Number(els.spanSlider.value));
+        state.span = Number(els.spanSlider.value);
+        els.spanNumber.value = state.spanRaw;
+        els.spanError.textContent = "";
+        els.spanNumber.classList.remove("input-error");
+        handleSpanChange();
+      });
+
+      els.spanNumber.addEventListener("input", () => {
+        state.spanRaw = els.spanNumber.value;
+        const result = validateNumericText(
+          state.spanRaw,
+          "Span",
+          4,
+          40,
+          false,
+          els.spanError
+        );
+        els.spanNumber.classList.toggle("input-error", !result.valid);
+        if (result.valid) {
+          state.span = result.value;
+          els.spanSlider.value = String(result.value);
+          handleSpanChange();
+        } else {
+          state.span = null;
+          validateAll();
+        }
+      });
+
+      els.material.addEventListener("change", () => {
+        state.material = els.material.value;
+        const table = sectionsByMaterial[state.material];
+        if (!table.sections.includes(state.section)) {
+          state.section = table.defaultSection;
+        }
+        populateSectionOptions();
+        els.section.value = state.section;
+        validateAll();
+      });
+
+      els.section.addEventListener("change", () => {
+        state.section = els.section.value;
+        validateAll();
+      });
+
+      els.addPointLoad.addEventListener("click", () => {
+        if (state.pointLoads.length >= 20) {
+          validateAll();
+          return;
+        }
+        const span = state.span ?? 20;
+        const position = state.support === "cantilever" ? span : span / 2;
+        state.pointLoads.push({
+          id: state.nextLoadId++,
+          magnitude: "0.000",
+          direction: "down",
+          position: formatThree(position)
+        });
+        renderLoads();
+        validateAll();
+      });
+
+      els.addUniformLoad.addEventListener("click", () => {
+        if (state.uniformLoads.length >= 10) {
+          validateAll();
+          return;
+        }
+        const span = state.span ?? 20;
+        state.uniformLoads.push({
+          id: state.nextLoadId++,
+          magnitude: "1.000",
+          direction: "down",
+          start: "0.000",
+          end: formatThree(span),
+          endTracksSpan: true
+        });
+        renderLoads();
+        validateAll();
+      });
+
+      els.loadsContainer.addEventListener("click", (event) => {
+        const removeButton = event.target.closest("[data-remove-load]");
+        if (!removeButton) return;
+        const kind = removeButton.dataset.removeLoad;
+        const id = Number(removeButton.dataset.loadId);
+        if (kind === "point") {
+          state.pointLoads = state.pointLoads.filter((load) => load.id !== id);
+        } else {
+          state.uniformLoads = state.uniformLoads.filter((load) => load.id !== id);
+        }
+        renderLoads();
+        validateAll();
+      });
+
+      els.loadsContainer.addEventListener("input", handleLoadInput);
+      els.loadsContainer.addEventListener("change", handleLoadInput);
+
+      syncSupport();
+      populateSectionOptions();
+      els.deflectionLimit.value = "360";
+      renderLoads();
+      validateAll();
+    }
+
+    function formatThree(value) {
+      return Number(value).toFixed(3);
+    }
+
+    function validateNumericText(raw, label, min, max, allowNegative, errorElement) {
+      const text = String(raw).trim();
+      if (!text) {
+        return setValidationResult(errorElement, `${label} is required.`);
+      }
+
+      if (!/^(?:[-+]?\d+(?:\.\d*)?|\.\d+)$/.test(text)) {
+        return setValidationResult(errorElement, `${label} must be numeric.`);
+      }
+
+      const decimalPart = text.includes(".") ? text.split(".")[1] : "";
+      if (decimalPart && decimalPart.length > 3) {
+        return setValidationResult(errorElement, `${label} accepts no more than three decimal places.`);
+      }
+
+      const value = Number(text);
+      if (!Number.isFinite(value)) {
+        return setValidationResult(errorElement, `${label} must be numeric.`);
+      }
+      if (!allowNegative && value < 0) {
+        return setValidationResult(errorElement, `${label} cannot be negative.`);
+      }
+      if (value < min || value > max) {
+        return setValidationResult(errorElement, `${label} must be between ${min} and ${max}.`);
+      }
+
+      errorElement.textContent = "";
+      return { valid: true, value };
+    }
+
+    function setValidationResult(errorElement, message) {
+      if (errorElement) errorElement.textContent = message;
+      return { valid: false, value: null, message };
+    }
+
+    function handleSpanChange() {
+      if (!state.span) {
+        validateAll();
+        return;
+      }
+
+      state.uniformLoads.forEach((load) => {
+        if (load.endTracksSpan) {
+          load.end = formatThree(state.span);
+        }
+      });
+
+      renderLoads();
+      validateAll();
+    }
+
+    function syncSupport() {
+      els.supportButtons.forEach((button) => {
+        button.classList.toggle("selected", button.dataset.support === state.support);
+      });
+
+      const isCantilever = state.support === "cantilever";
+      document.querySelector(".header-badge").textContent =
+        (isCantilever ? "Cantilever" : "Simply supported") + " · " + (state.span ?? "—") + " ft";
+      document.getElementById("left-pin-support").style.display = isCantilever ? "none" : "";
+      document.getElementById("right-roller-support").style.display = isCantilever ? "none" : "";
+      document.getElementById("fixed-left-support").style.display = isCantilever ? "" : "none";
+    }
+
+    function populateSectionOptions() {
+      const table = sectionsByMaterial[state.material];
+      els.section.innerHTML = table.sections
+        .map((name) => `<option value="${name}">${name}</option>`)
+        .join("");
+      if (!table.sections.includes(state.section)) {
+        state.section = table.defaultSection;
+      }
+      els.section.value = state.section;
+    }
+
+    function renderLoads() {
+      const allLoads = [
+        ...state.pointLoads.map((load) => ({ kind: "point", load })),
+        ...state.uniformLoads.map((load) => ({ kind: "uniform", load }))
+      ];
+
+      els.loadCount.textContent = String(allLoads.length);
+
+      els.loadsContainer.innerHTML = allLoads.map(({ kind, load }) => {
+        if (kind === "point") {
+          return `
+            <div class="load-row" data-load-kind="point" data-load-id="${load.id}">
+              <div class="load-row-header">
+                <span class="load-type">Point load</span>
+                <button class="remove-load" type="button" aria-label="Remove point load"
+                  data-remove-load="point" data-load-id="${load.id}">×</button>
+              </div>
+              <div class="load-grid">
+                <div class="mini-field">
+                  <label>Magnitude · kips</label>
+                  <input type="text" inputmode="decimal" autocomplete="off"
+                    value="${escapeHtml(load.magnitude)}" data-field="magnitude">
+                  <div class="field-error" data-error-field="magnitude" role="alert"></div>
+                </div>
+                <div class="mini-field">
+                  <label>Direction</label>
+                  <select data-field="direction">
+                    <option value="down"${load.direction === "down" ? " selected" : ""}>Down</option>
+                    <option value="up"${load.direction === "up" ? " selected" : ""}>Up</option>
+                  </select>
+                </div>
+                <div class="mini-field">
+                  <label>Position · ft</label>
+                  <input type="text" inputmode="decimal" autocomplete="off"
+                    value="${escapeHtml(load.position)}" data-field="position">
+                  <div class="field-error" data-error-field="position" role="alert"></div>
+                </div>
+              </div>
+            </div>`;
+        }
+
+        return `
+          <div class="load-row" data-load-kind="uniform" data-load-id="${load.id}">
+            <div class="load-row-header">
+              <span class="load-type">Uniform load</span>
+              <button class="remove-load" type="button" aria-label="Remove uniform load"
+                data-remove-load="uniform" data-load-id="${load.id}">×</button>
+            </div>
+            <div class="load-grid">
+              <div class="mini-field">
+                <label>Magnitude · kip/ft</label>
+                <input type="text" inputmode="decimal" autocomplete="off"
+                  value="${escapeHtml(load.magnitude)}" data-field="magnitude">
+                <div class="field-error" data-error-field="magnitude" role="alert"></div>
+              </div>
+              <div class="mini-field">
+                <label>Direction</label>
+                <select data-field="direction">
+                  <option value="down"${load.direction === "down" ? " selected" : ""}>Down</option>
+                  <option value="up"${load.direction === "up" ? " selected" : ""}>Up</option>
+                </select>
+              </div>
+              <div class="mini-field">
+                <label>Start · ft</label>
+                <input type="text" inputmode="decimal" autocomplete="off"
+                  value="${escapeHtml(load.start)}" data-field="start">
+                <div class="field-error" data-error-field="start" role="alert"></div>
+              </div>
+              <div class="mini-field">
+                <label>End · ft</label>
+                <input type="text" inputmode="decimal" autocomplete="off"
+                  value="${escapeHtml(load.end)}" data-field="end">
+                <div class="field-error" data-error-field="end" role="alert"></div>
+              </div>
+            </div>
+          </div>`;
+      }).join("");
+
+      els.addPointLoad.disabled = state.pointLoads.length >= 20;
+      els.addUniformLoad.disabled = state.uniformLoads.length >= 10;
+      els.addPointLoad.classList.toggle("is-disabled", state.pointLoads.length >= 20);
+      els.addUniformLoad.classList.toggle("is-disabled", state.uniformLoads.length >= 10);
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function handleLoadInput(event) {
+      const field = event.target.closest("[data-field]");
+      if (!field) return;
+      const row = field.closest("[data-load-kind]");
+      if (!row) return;
+
+      const kind = row.dataset.loadKind;
+      const id = Number(row.dataset.loadId);
+      const load = kind === "point"
+        ? state.pointLoads.find((item) => item.id === id)
+        : state.uniformLoads.find((item) => item.id === id);
+      if (!load) return;
+
+      const fieldName = field.dataset.field;
+      if (field.tagName === "SELECT") {
+        load[fieldName] = field.value;
+        validateAll();
+        return;
+      }
+
+      load[fieldName] = field.value;
+      if (kind === "uniform" && fieldName === "end") {
+        load.endTracksSpan = false;
+      }
+      validateAll();
+    }
+
+    function validateAll() {
+      let valid = true;
+      const errors = [];
+
+      if (!state.span) {
+        valid = false;
+        errors.push("Span");
+      } else {
+        els.spanTag.textContent = `${formatThree(state.span)} ft span`;
+      }
+
+      document.querySelectorAll(".load-row").forEach((row) => {
+        const kind = row.dataset.loadKind;
+        const id = Number(row.dataset.loadId);
+        const load = kind === "point"
+          ? state.pointLoads.find((item) => item.id === id)
+          : state.uniformLoads.find((item) => item.id === id);
+        if (!load) return;
+
+        const fieldInputs = Array.from(row.querySelectorAll("[data-field]"));
+        fieldInputs.forEach((input) => {
+          if (input.tagName === "SELECT") return;
+          const fieldName = input.dataset.field;
+          let result = { valid: true };
+          const errorElement = row.querySelector(`[data-error-field="${fieldName}"]`);
+          if (fieldName === "magnitude") {
+            const max = kind === "point" ? 100 : 10;
+            result = validateNumericText(load[fieldName], "Magnitude", 0, max, false, errorElement);
+          } else if (fieldName === "position") {
+            result = validateNumericText(load[fieldName], "Position", 0, state.span ?? 40, false, errorElement);
+          } else if (fieldName === "start" || fieldName === "end") {
+            result = validateNumericText(load[fieldName], fieldName === "start" ? "Start" : "End", 0, state.span ?? 40, false, errorElement);
+          }
+          input.classList.toggle("input-error", !result.valid);
+          if (!result.valid) {
+            valid = false;
+            errors.push(`${kind} load ${fieldName}`);
+          }
+        });
+
+        if (kind === "uniform") {
+          const startResult = parseValidated(load.start);
+          const endResult = parseValidated(load.end);
+          const startError = row.querySelector('[data-error-field="start"]');
+          const endError = row.querySelector('[data-error-field="end"]');
+          if (startResult.valid && endResult.valid) {
+            if (startResult.value >= endResult.value) {
+              valid = false;
+              errors.push("Uniform interval");
+              startError.textContent = "Start must be less than end.";
+              endError.textContent = "End must be greater than start.";
+              row.querySelector('[data-field="start"]').classList.add("input-error");
+              row.querySelector('[data-field="end"]').classList.add("input-error");
+            }
+          }
+        }
+      });
+
+      syncSupport();
+      syncLoadLimitMessage();
+      renderUnavailable(valid, errors);
+      syncPlaceholderDrawing();
+      return valid;
+    }
+
+    function parseValidated(raw) {
+      const text = String(raw).trim();
+      if (!/^(?:[-+]?\d+(?:\.\d*)?|\.\d+)$/.test(text)) {
+        return { valid: false };
+      }
+      const decimalPart = text.includes(".") ? text.split(".")[1] : "";
+      if (decimalPart && decimalPart.length > 3) {
+        return { valid: false };
+      }
+      return { valid: true, value: Number(text) };
+    }
+
+    function syncLoadLimitMessage() {
+      els.loadLimitError.textContent = "";
+      if (state.pointLoads.length >= 20) {
+        els.loadLimitError.textContent = "Maximum of 20 point loads reached.";
+      } else if (state.uniformLoads.length >= 10) {
+        els.loadLimitError.textContent = "Maximum of 10 uniform loads reached.";
+      }
+    }
+
+    function renderUnavailable(valid, errors) {
+      const status = els.calculationStatus;
+      const statuses = [
+        document.getElementById("bending-status"),
+        document.getElementById("deflection-status")
+      ];
+      const actualAllowableIds = [
+        "bending-actual",
+        "bending-allowable",
+        "bending-ratio",
+        "deflection-actual",
+        "deflection-allowable",
+        "deflection-ratio"
+      ];
+
+      if (!valid) {
+        status.className = "status-banner invalid";
+        status.textContent = "Calculated results unavailable: correct the highlighted inputs.";
+        statuses.forEach((item) => {
+          item.className = "status-pill status-neutral";
+          item.textContent = "UNAVAILABLE";
+        });
+        actualAllowableIds.forEach((id) => {
+          document.getElementById(id).textContent =
+            id.endsWith("ratio") ? "Unavailable" : "—";
+        });
+      } else {
+        status.className = "status-banner";
+        status.textContent = "Calculations unavailable in Stage 2. Inputs are valid.";
+        statuses.forEach((item) => {
+          item.className = "status-pill status-neutral";
+          item.textContent = "UNAVAILABLE";
+        });
+        document.getElementById("bending-actual").textContent = "— ksi";
+        document.getElementById("bending-allowable").textContent = "— ksi";
+        document.getElementById("bending-ratio").textContent = "Placeholder";
+        document.getElementById("deflection-actual").textContent = "— in";
+        document.getElementById("deflection-allowable").textContent = "— in";
+        document.getElementById("deflection-ratio").textContent = "Placeholder";
+      }
+
+      document.getElementById("bending-ratio-fill").style.width = "0%";
+      document.getElementById("bending-ratio-fill").style.background = "#98a2b3";
+      document.getElementById("deflection-ratio-fill").style.width = "0%";
+      document.getElementById("deflection-ratio-fill").style.background = "#98a2b3";
+    }
+
+    function syncPlaceholderDrawing() {
+      document.getElementById("left-reaction-placeholder").textContent = "— k";
+      document.getElementById("right-reaction-placeholder").textContent = "— k";
+      document.getElementById("shear-placeholder-left").textContent = "PLACEHOLDER";
+      document.getElementById("shear-placeholder-right").textContent = "PLACEHOLDER";
+      document.getElementById("moment-placeholder").textContent = "PLACEHOLDER";
+      document.getElementById("deflection-placeholder").textContent = "PLACEHOLDER";
+    }
+
+    document.addEventListener("DOMContentLoaded", onReady);
   </script>
 </body>
 </html>
