@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Beam Designer</title>
+  <style>
+    :root {
+      --accent: #2563eb;
+      --accent-dark: #1d4ed8;
+      --accent-soft: #eff6ff;
+      --background: #f4f7fb;
+      --card: #ffffff;
+      --text: #172033;
+      --muted: #667085;
+      --border: #dfe5ee;
+      --green: #15803d;
+      --green-soft: #ecfdf3;
+      --amber: #b45309;
+      --amber-soft: #fffbeb;
+      --red: #b42318;
+      --red-soft: #fff1f0;
+      --shadow: 0 8px 24px rgba(16, 24, 40, 0.07);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: var(--background);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    .app-shell {
+      width: 100%;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .app-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 1440px;
+      margin: 0 auto 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: var(--accent);
+      box-shadow: 0 6px 14px rgba(37, 99, 235, 0.22);
+    }
+
+    .brand-mark svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin-bottom: 0;
+      font-size: 24px;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+
+    .header-badge {
+      padding: 7px 10px;
+      border: 1px solid #dbeafe;
+      border-radius: 999px;
+      background: #fff;
+      color: #3b67a7;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .layout {
+      max-width: 1440px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 24px;
+      align-items: start;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid rgba(223, 229, 238, 0.9);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .input-panel {
+      position: sticky;
+      top: 24px;
+      overflow: hidden;
+    }
+
+    .panel-section {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .panel-section:last-child {
+      border-bottom: 0;
+    }
+
+    .section-heading {
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .section-heading h2 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.2;
+    }
+
+    .section-heading .count {
+      min-width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent-dark);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .field {
+      margin-bottom: 12px;
+    }
+
+    .field:last-child {
+      margin-bottom: 0;
+    }
+
+    .field-label,
+    .group-label {
+      display: block;
+      margin-bottom: 7px;
+      color: #344054;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .unit-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 68px;
+      gap: 8px;
+      align-items: center;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    input[type="number"],
+    select {
+      width: 100%;
+      height: 44px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: #fff;
+      color: var(--text);
+      padding: 0 10px;
+      outline: none;
+    }
+
+    input:focus-visible,
+    select:focus-visible,
+    button:focus-visible {
+      outline: 3px solid rgba(37, 99, 235, 0.22);
+      outline-offset: 2px;
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .segment {
+      min-height: 44px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: #fff;
+      color: #344054;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: default;
+    }
+
+    .segment.selected {
+      border-color: #93b4f7;
+      background: var(--accent-soft);
+      color: var(--accent-dark);
+      box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.08);
+    }
+
+    .load-row {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fbfcfe;
+      padding: 10px;
+      margin-bottom: 8px;
+    }
+
+    .load-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .load-row-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .load-type {
+      color: #344054;
+    }
+
+    .remove-load {
+      width: 28px;
+      height: 28px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: #98a2b3;
+      cursor: default;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .load-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .mini-field label {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .mini-field input {
+      height: 38px;
+    }
+
+    .add-load-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .secondary-button,
+    .primary-button {
+      min-height: 44px;
+      border-radius: 9px;
+      font-weight: 800;
+      cursor: default;
+    }
+
+    .secondary-button {
+      border: 1px solid #bdd1f7;
+      background: #fff;
+      color: var(--accent-dark);
+    }
+
+    .primary-button {
+      width: 100%;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .results-panel {
+      min-width: 0;
+      display: grid;
+      gap: 16px;
+    }
+
+    .results-card {
+      padding: 16px;
+      min-width: 0;
+    }
+
+    .card-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .card-title-row h2 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .subtle-tag {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #f8fafc;
+      color: var(--muted);
+      padding: 5px 8px;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .drawing-scroll {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    .drawing-content {
+      min-width: 680px;
+    }
+
+    .diagram-svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .checks-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .check-card {
+      padding: 16px;
+    }
+
+    .check-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .check-title {
+      color: #344054;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 6px 9px;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .status-pass {
+      background: var(--green-soft);
+      color: var(--green);
+    }
+
+    .status-fail {
+      background: var(--red-soft);
+      color: var(--red);
+    }
+
+    .check-values {
+      margin: 14px 0 10px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .check-values span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .check-values strong {
+      display: block;
+      margin-top: 3px;
+      font-size: 20px;
+      line-height: 1.1;
+    }
+
+    .ratio-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .ratio-track {
+      height: 8px;
+      border-radius: 999px;
+      background: #edf1f7;
+      overflow: hidden;
+    }
+
+    .ratio-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: var(--green);
+    }
+
+    .recommendation {
+      margin-top: 16px;
+      border: 1px solid #cfe0ff;
+      border-radius: 10px;
+      background: var(--accent-soft);
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .recommendation-copy {
+      color: #344054;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .recommendation-copy strong {
+      color: var(--accent-dark);
+    }
+
+    @media (max-width: 1099px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .input-panel {
+        position: static;
+      }
+    }
+
+    @media (max-width: 699px) {
+      .app-shell {
+        padding: 16px;
+      }
+
+      .app-header {
+        align-items: flex-start;
+      }
+
+      .header-badge {
+        display: none;
+      }
+
+      .layout {
+        gap: 16px;
+      }
+
+      .results-card {
+        padding: 12px;
+      }
+
+      .checks-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .drawing-content {
+        min-width: 680px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M3 18.5h18M5.5 18.5V8h13v10.5M8.5 8V5.5h7V8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h1>Beam Designer</h1>
+      </div>
+      <div class="header-badge">Simply supported · 20 ft</div>
+    </header>
+
+    <div class="layout">
+      <aside class="card input-panel" aria-label="Beam inputs">
+        <section class="panel-section">
+          <div class="section-heading">
+            <h2>Beam</h2>
+          </div>
+          <div class="field">
+            <span class="group-label">Support type</span>
+            <div class="segmented" aria-label="Support type">
+              <button class="segment selected" type="button">Simply supported</button>
+              <button class="segment" type="button">Cantilever</button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="span-slider">Span</label>
+            <div class="unit-row">
+              <input id="span-slider" type="range" min="4" max="40" step="0.5" value="20">
+              <input type="number" value="20.000" aria-label="Span in feet" step="0.001" min="4" max="40">
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="deflection-limit">Deflection limit</label>
+            <select id="deflection-limit">
+              <option>L/360</option>
+              <option>L/240</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-heading">
+            <h2>Loads</h2>
+            <span class="count">1</span>
+          </div>
+          <div class="load-row">
+            <div class="load-row-header">
+              <span class="load-type">Uniform load</span>
+              <button class="remove-load" type="button" aria-label="Remove uniform load">×</button>
+            </div>
+            <div class="load-grid">
+              <div class="mini-field">
+                <label>Magnitude · kip/ft</label>
+                <input type="number" value="1.000" step="0.001" min="-10" max="10">
+              </div>
+              <div class="mini-field">
+                <label>Direction</label>
+                <select>
+                  <option>Down</option>
+                  <option>Up</option>
+                </select>
+              </div>
+              <div class="mini-field">
+                <label>Start · ft</label>
+                <input type="number" value="0.000" step="0.001" min="0" max="20">
+              </div>
+              <div class="mini-field">
+                <label>End · ft</label>
+                <input type="number" value="20.000" step="0.001" min="0" max="20">
+              </div>
+            </div>
+          </div>
+          <div class="add-load-row">
+            <button class="secondary-button" type="button">+ Point load</button>
+            <button class="secondary-button" type="button">+ Uniform load</button>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-heading">
+            <h2>Section</h2>
+          </div>
+          <div class="field">
+            <label class="field-label" for="material">Material</label>
+            <select id="material">
+              <option>Steel W-shapes</option>
+              <option>Douglas Fir-Larch No. 2</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="section">Cross-section</label>
+            <select id="section">
+              <option>W12x26</option>
+              <option>W8x10</option>
+              <option>W10x12</option>
+              <option>W14x22</option>
+              <option>W16x26</option>
+              <option>W18x35</option>
+              <option>W21x44</option>
+              <option>W24x55</option>
+            </select>
+          </div>
+        </section>
+      </aside>
+
+      <section class="results-panel" aria-label="Beam results">
+        <article class="card results-card">
+          <div class="card-title-row">
+            <h2>Beam and diagrams</h2>
+            <span class="subtle-tag">20 ft span</span>
+          </div>
+
+          <div class="drawing-scroll" aria-label="Beam drawing and diagrams">
+            <div class="drawing-content">
+              <svg class="diagram-svg" viewBox="0 0 800 560" role="img" aria-labelledby="beam-title beam-desc">
+                <title id="beam-title">Example beam analysis</title>
+                <desc id="beam-desc">A 20 foot simply supported beam with a full-span uniform load, three placeholder diagrams, and reaction labels.</desc>
+
+                <g font-family="Inter, sans-serif" fill="#344054" font-size="12">
+                  <text x="38" y="20" font-weight="800" fill="#172033">BEAM</text>
+                  <text x="38" y="142" font-size="11" fill="#667085">0 ft</text>
+                  <text x="720" y="142" font-size="11" fill="#667085">20 ft</text>
+
+                  <text x="38" y="201" font-weight="800" fill="#172033">SHEAR</text>
+                  <text x="38" y="348" font-weight="800" fill="#172033">MOMENT</text>
+                  <text x="38" y="493" font-weight="800" fill="#172033">DEFLECTION</text>
+                </g>
+
+                <defs>
+                  <marker id="arrow-down" markerWidth="8" markerHeight="8" refX="4" refY="7" orient="auto">
+                    <path d="M1 1L4 7L7 1" fill="none" stroke="#2563eb" stroke-width="1.5"/>
+                  </marker>
+                  <marker id="arrow-up" markerWidth="8" markerHeight="8" refX="4" refY="1" orient="auto">
+                    <path d="M1 7L4 1L7 7" fill="none" stroke="#15803d" stroke-width="1.5"/>
+                  </marker>
+                </defs>
+
+                <!-- Beam and supports -->
+                <line x1="86" y1="82" x2="714" y2="82" stroke="#344054" stroke-width="8" stroke-linecap="round"/>
+                <line x1="86" y1="98" x2="714" y2="98" stroke="#d0d5dd" stroke-width="1"/>
+
+                <polygon points="86,98 70,118 102,118" fill="#fff" stroke="#344054" stroke-width="2"/>
+                <line x1="64" y1="118" x2="108" y2="118" stroke="#344054" stroke-width="2"/>
+                <line x1="70" y1="118" x2="62" y2="126" stroke="#344054" stroke-width="2"/>
+                <line x1="86" y1="118" x2="78" y2="126" stroke="#344054" stroke-width="2"/>
+                <line x1="102" y1="118" x2="94" y2="126" stroke="#344054" stroke-width="2"/>
+
+                <circle cx="714" cy="108" r="10" fill="#fff" stroke="#344054" stroke-width="2"/>
+                <line x1="704" y1="118" x2="724" y2="118" stroke="#344054" stroke-width="2"/>
+                <line x1="704" y1="118" x2="696" y2="126" stroke="#344054" stroke-width="2"/>
+                <line x1="714" y1="118" x2="706" y2="126" stroke="#344054" stroke-width="2"/>
+                <line x1="724" y1="118" x2="716" y2="126" stroke="#344054" stroke-width="2"/>
+
+                <!-- Reactions -->
+                <path d="M86 76V42" stroke="#15803d" stroke-width="2" marker-end="url(#arrow-up)"/>
+                <text x="74" y="36" font-family="Inter, sans-serif" font-size="12" font-weight="800" fill="#15803d">10.00 k</text>
+                <path d="M714 76V42" stroke="#15803d" stroke-width="2" marker-end="url(#arrow-up)"/>
+                <text x="690" y="36" text-anchor="end" font-family="Inter, sans-serif" font-size="12" font-weight="800" fill="#15803d">10.00 k</text>
+
+                <!-- Uniform load arrows -->
+                <g stroke="#2563eb" fill="none" stroke-width="1.5" marker-end="url(#arrow-down)">
+                  <line x1="112" y1="50" x2="112" y2="74"/>
+                  <line x1="180" y1="50" x2="180" y2="74"/>
+                  <line x1="248" y1="50" x2="248" y2="74"/>
+                  <line x1="316" y1="50" x2="316" y2="74"/>
+                  <line x1="384" y1="50" x2="384" y2="74"/>
+                  <line x1="452" y1="50" x2="452" y2="74"/>
+                  <line x1="520" y1="50" x2="520" y2="74"/>
+                  <line x1="588" y1="50" x2="588" y2="74"/>
+                  <line x1="656" y1="50" x2="656" y2="74"/>
+                </g>
+                <rect x="112" y="43" width="544" height="7" rx="3.5" fill="#dbeafe"/>
+                <text x="384" y="28" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" font-weight="800" fill="#2563eb">1.00 kip/ft</text>
+
+                <!-- Common x scale -->
+                <g stroke="#e4e7ec" stroke-width="1">
+                  <line x1="86" y1="176" x2="714" y2="176"/>
+                  <line x1="86" y1="323" x2="714" y2="323"/>
+                  <line x1="86" y1="468" x2="714" y2="468"/>
+                  <line x1="86" y1="176" x2="86" y2="468" stroke-dasharray="3 5"/>
+                  <line x1="714" y1="176" x2="714" y2="468" stroke-dasharray="3 5"/>
+                  <line x1="400" y1="176" x2="400" y2="468" stroke-dasharray="3 5"/>
+                </g>
+
+                <!-- Shear diagram -->
+                <g>
+                  <text x="716" y="176" text-anchor="end" font-family="Inter, sans-serif" font-size="10" fill="#98a2b3">kips</text>
+                  <line x1="86" y1="176" x2="714" y2="176" stroke="#98a2b3" stroke-width="1"/>
+                  <line x1="86" y1="176" x2="86" y2="230" stroke="#2563eb" stroke-width="2"/>
+                  <line x1="86" y1="230" x2="714" y2="230" stroke="#2563eb" stroke-width="2"/>
+                  <line x1="714" y1="230" x2="714" y2="176" stroke="#2563eb" stroke-width="2"/>
+                  <path d="M86 176L86 230L714 230L714 176Z" fill="#dbeafe" fill-opacity="0.75"/>
+                  <text x="86" y="158" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#2563eb">+10.00</text>
+                  <text x="714" y="158" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#2563eb">-10.00</text>
+                </g>
+
+                <!-- Moment diagram -->
+                <g>
+                  <text x="716" y="323" text-anchor="end" font-family="Inter, sans-serif" font-size="10" fill="#98a2b3">kip-ft</text>
+                  <line x1="86" y1="323" x2="714" y2="323" stroke="#98a2b3" stroke-width="1"/>
+                  <path d="M86 323 Q400 238 714 323 Z" fill="#cce5ff" fill-opacity="0.85" stroke="#2563eb" stroke-width="2"/>
+                  <line x1="400" y1="323" x2="400" y2="238" stroke="#2563eb" stroke-width="1" stroke-dasharray="3 4"/>
+                  <text x="400" y="219" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#2563eb">50.00 kip-ft · 10 ft</text>
+                </g>
+
+                <!-- Deflection diagram -->
+                <g>
+                  <text x="716" y="468" text-anchor="end" font-family="Inter, sans-serif" font-size="10" fill="#98a2b3">in</text>
+                  <line x1="86" y1="468" x2="714" y2="468" stroke="#98a2b3" stroke-width="1"/>
+                  <path d="M86 468 Q400 520 714 468 Z" fill="#dbeafe" fill-opacity="0.7" stroke="#2563eb" stroke-width="2"/>
+                  <line x1="400" y1="468" x2="400" y2="520" stroke="#2563eb" stroke-width="1" stroke-dasharray="3 4"/>
+                  <text x="400" y="542" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#2563eb">0.609 in · 10 ft</text>
+                </g>
+
+                <!-- x-axis ticks -->
+                <g stroke="#344054" stroke-width="1" font-family="Inter, sans-serif" fill="#667085" font-size="10">
+                  <line x1="86" y1="468" x2="86" y2="474"/>
+                  <text x="86" y="488" text-anchor="middle" stroke="none">0</text>
+                  <line x1="400" y1="468" x2="400" y2="474"/>
+                  <text x="400" y="488" text-anchor="middle" stroke="none">10</text>
+                  <line x1="714" y1="468" x2="714" y2="474"/>
+                  <text x="714" y="488" text-anchor="middle" stroke="none">20 ft</text>
+                </g>
+              </svg>
+            </div>
+          </div>
+        </article>
+
+        <div class="checks-grid">
+          <article class="card check-card">
+            <div class="check-header">
+              <span class="check-title">Bending</span>
+              <span class="status-pill status-pass">✓ PASS</span>
+            </div>
+            <div class="check-values">
+              <div>
+                <span>Actual</span>
+                <strong>17.96 ksi</strong>
+              </div>
+              <div>
+                <span>Allowable</span>
+                <strong>30.00 ksi</strong>
+              </div>
+            </div>
+            <div class="ratio-line">
+              <span>Utilization</span>
+              <strong>59.9%</strong>
+            </div>
+            <div class="ratio-track" aria-label="Bending utilization 59.9 percent">
+              <div class="ratio-fill" style="width:59.9%"></div>
+            </div>
+          </article>
+
+          <article class="card check-card">
+            <div class="check-header">
+              <span class="check-title">Deflection</span>
+              <span class="status-pill status-pass">✓ PASS</span>
+            </div>
+            <div class="check-values">
+              <div>
+                <span>Actual</span>
+                <strong>0.609 in</strong>
+              </div>
+              <div>
+                <span>Allowable</span>
+                <strong>0.667 in</strong>
+              </div>
+            </div>
+            <div class="ratio-line">
+              <span>Utilization</span>
+              <strong>91.3%</strong>
+            </div>
+            <div class="ratio-track" aria-label="Deflection utilization 91.3 percent">
+              <div class="ratio-fill" style="width:91.3%;background:#b45309"></div>
+            </div>
+          </article>
+        </div>
+
+        <article class="card results-card">
+          <div class="recommendation">
+            <div class="recommendation-copy">
+              Lightest passing section: <strong>W12x26</strong>
+            </div>
+            <button class="primary-button" type="button" style="width:auto;padding:0 16px">Use this section</button>
+          </div>
+        </article>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    /*
+     * Stage 1 intentionally contains no engineering calculations or functional
+     * load editing. Later stages can separate this script into:
+     * - app state and validation
+     * - engineering calculations
+     * - SVG/drawing rendering
+     * - interface event handlers
+     */
+  </script>
+</body>
+</html>
