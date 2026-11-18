@@ -653,8 +653,8 @@
 
                 <g font-family="Inter, sans-serif" fill="#344054" font-size="12">
                   <text x="38" y="20" font-weight="800" fill="#172033">BEAM</text>
-                  <text x="38" y="142" font-size="11" fill="#667085">0 ft</text>
-                  <text x="720" y="142" font-size="11" fill="#667085">20 ft</text>
+                  <text id="beam-x-zero" x="38" y="142" font-size="11" fill="#667085">0 ft</text>
+                  <text id="beam-x-end" x="720" y="142" font-size="11" fill="#667085">20 ft</text>
 
                   <text x="38" y="201" font-weight="800" fill="#172033">SHEAR</text>
                   <text x="38" y="348" font-weight="800" fill="#172033">MOMENT</text>
@@ -703,7 +703,7 @@
                 <text id="right-reaction-placeholder" x="690" y="36" text-anchor="end" font-family="Inter, sans-serif" font-size="12" font-weight="800" fill="#15803d">— k</text>
 
                 <!-- Uniform load arrows -->
-                <g stroke="#2563eb" fill="none" stroke-width="1.5" marker-end="url(#arrow-down)">
+                <g id="uniform-load-render" stroke="#2563eb" fill="none" stroke-width="1.5" marker-end="url(#arrow-down)">
                   <line x1="112" y1="50" x2="112" y2="74"/>
                   <line x1="180" y1="50" x2="180" y2="74"/>
                   <line x1="248" y1="50" x2="248" y2="74"/>
@@ -714,8 +714,9 @@
                   <line x1="588" y1="50" x2="588" y2="74"/>
                   <line x1="656" y1="50" x2="656" y2="74"/>
                 </g>
-                <rect x="112" y="43" width="544" height="7" rx="3.5" fill="#dbeafe"/>
-                <text x="384" y="28" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" font-weight="800" fill="#2563eb">1.00 kip/ft</text>
+                <rect id="uniform-load-label-box" x="112" y="43" width="544" height="7" rx="3.5" fill="#dbeafe"/>
+                <text id="uniform-load-label" x="384" y="28" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" font-weight="800" fill="#2563eb">1.00 kip/ft</text>
+                <g id="point-load-render"></g>
 
                 <!-- Common x scale -->
                 <g stroke="#e4e7ec" stroke-width="1">
@@ -728,7 +729,7 @@
                 </g>
 
                 <!-- Shear diagram -->
-                <g>
+                <g id="shear-static">
                   <text x="716" y="176" text-anchor="end" font-family="Inter, sans-serif" font-size="10" fill="#98a2b3">kips</text>
                   <line x1="86" y1="176" x2="714" y2="176" stroke="#98a2b3" stroke-width="1"/>
                   <line x1="86" y1="176" x2="86" y2="230" stroke="#2563eb" stroke-width="2"/>
@@ -738,15 +739,17 @@
                   <text id="shear-placeholder-left" x="86" y="158" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#2563eb">PLACEHOLDER</text>
                   <text id="shear-placeholder-right" x="714" y="158" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#2563eb">PLACEHOLDER</text>
                 </g>
+                <g id="shear-render"></g>
 
                 <!-- Moment diagram -->
-                <g>
+                <g id="moment-static">
                   <text x="716" y="323" text-anchor="end" font-family="Inter, sans-serif" font-size="10" fill="#98a2b3">kip-ft</text>
                   <line x1="86" y1="323" x2="714" y2="323" stroke="#98a2b3" stroke-width="1"/>
                   <path d="M86 323 Q400 238 714 323 Z" fill="#cce5ff" fill-opacity="0.85" stroke="#2563eb" stroke-width="2"/>
                   <line x1="400" y1="323" x2="400" y2="238" stroke="#2563eb" stroke-width="1" stroke-dasharray="3 4"/>
                   <text id="moment-placeholder" x="400" y="219" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="800" fill="#2563eb">PLACEHOLDER</text>
                 </g>
+                <g id="moment-render"></g>
 
                 <!-- Deflection diagram -->
                 <g>
@@ -870,6 +873,492 @@
     };
 
     const els = {};
+
+    // Stage 3 engineering calculation module. These functions intentionally
+    // stop before deflection, stress, and section recommendations.
+    function calculateStage3() {
+      if (!state.span || state.span < 4 || state.span > 40) return null;
+
+      const L = state.span;
+      const pointLoads = state.pointLoads
+        .map((load) => {
+          const magnitude = Number(load.magnitude);
+          const position = Number(load.position);
+          if (!Number.isFinite(magnitude) || !Number.isFinite(position)) return null;
+          return {
+            magnitude,
+            position,
+            signedMagnitude: load.direction === "down" ? magnitude : -magnitude
+          };
+        })
+        .filter(Boolean);
+
+      const uniformLoads = state.uniformLoads
+        .map((load) => {
+          const magnitude = Number(load.magnitude);
+          const start = Number(load.start);
+          const end = Number(load.end);
+          if (!Number.isFinite(magnitude) || !Number.isFinite(start) || !Number.isFinite(end)) return null;
+          return {
+            magnitude,
+            start,
+            end,
+            signedMagnitude: load.direction === "down" ? magnitude : -magnitude
+          };
+        })
+        .filter(Boolean);
+
+      const totalPointLoad = pointLoads.reduce((sum, load) => sum + load.signedMagnitude, 0);
+      const totalUniformLoad = uniformLoads.reduce(
+        (sum, load) => sum + load.signedMagnitude * (load.end - load.start),
+        0
+      );
+      const totalLoad = totalPointLoad + totalUniformLoad;
+      const pointMoment = pointLoads.reduce(
+        (sum, load) => sum + load.position * load.signedMagnitude,
+        0
+      );
+      const uniformMoment = uniformLoads.reduce((sum, load) => {
+        const length = load.end - load.start;
+        const centroid = (load.start + load.end) / 2;
+        return sum + centroid * load.signedMagnitude * length;
+      }, 0);
+      const loadMoment = pointMoment + uniformMoment;
+
+      let reactions;
+      if (state.support === "simply-supported") {
+        const By = loadMoment / L;
+        const Ay = totalLoad - By;
+        reactions = {
+          Ay,
+          By,
+          Av: null,
+          Mreaction: null,
+          internalFixedMoment: null
+        };
+      } else {
+        const Av = totalLoad;
+        const Mreaction = loadMoment;
+        reactions = {
+          Ay: null,
+          By: null,
+          Av,
+          Mreaction,
+          internalFixedMoment: -Mreaction
+        };
+      }
+
+      function uniformMomentIntegral(load, x) {
+        if (x <= load.start) return 0;
+        const c = Math.min(x, load.end);
+        if (c <= load.start) return 0;
+        return load.signedMagnitude * ((c - load.start) * x - (c * c - load.start * load.start) / 2);
+      }
+
+      function uniformShearIntegral(load, x) {
+        if (x <= load.start) return 0;
+        const c = Math.min(x, load.end);
+        return load.signedMagnitude * (c - load.start);
+      }
+
+      function momentAt(x) {
+        let moment;
+        if (state.support === "simply-supported") {
+          moment = reactions.Ay * x;
+        } else {
+          moment = reactions.internalFixedMoment + reactions.Av * x;
+        }
+
+        pointLoads.forEach((load) => {
+          if (x > load.position) {
+            moment -= load.signedMagnitude * (x - load.position);
+          }
+        });
+        uniformLoads.forEach((load) => {
+          moment -= uniformMomentIntegral(load, x);
+        });
+        return moment;
+      }
+
+      function shearAt(x, side = "right") {
+        if (side === "left" && Math.abs(x) < 1e-10) return 0;
+        if (side === "right" && Math.abs(x - L) < 1e-10) return 0;
+
+        let shear;
+        if (state.support === "simply-supported") {
+          shear = reactions.Ay;
+        } else {
+          shear = reactions.Av;
+        }
+
+        pointLoads.forEach((load) => {
+          const included = side === "left"
+            ? x > load.position
+            : x >= load.position;
+          if (included) shear -= load.signedMagnitude;
+        });
+        uniformLoads.forEach((load) => {
+          shear -= uniformShearIntegral(load, x);
+        });
+        return shear;
+      }
+
+      const breaks = new Set([0, L]);
+      pointLoads.forEach((load) => breaks.add(load.position));
+      uniformLoads.forEach((load) => {
+        breaks.add(load.start);
+        breaks.add(load.end);
+      });
+      const breakList = Array.from(breaks)
+        .filter((x) => x >= 0 && x <= L)
+        .sort((a, b) => a - b);
+
+      const samples = new Set(breakList);
+      for (let x = 0; x <= L; x += 1) samples.add(x);
+      const sampleList = Array.from(samples)
+        .filter((x) => x >= 0 && x <= L)
+        .sort((a, b) => a - b);
+
+      const shearCandidates = [];
+      const momentCandidates = [];
+
+      sampleList.forEach((x) => {
+        shearCandidates.push({ value: shearAt(x, "left"), x, side: "left" });
+        shearCandidates.push({ value: shearAt(x, "right"), x, side: "right" });
+        momentCandidates.push({ value: momentAt(x), x });
+      });
+
+      for (let i = 0; i < breakList.length - 1; i++) {
+        const left = breakList[i];
+        const right = breakList[i + 1];
+        if (right <= left) continue;
+
+        const vLeft = shearAt(left, "right");
+        const vRight = shearAt(right, "left");
+        if (Math.abs(vRight - vLeft) < 1e-12) {
+          if (left >= 0 && left <= L) shearCandidates.push({ value: vLeft, x: left, side: "segment" });
+        } else {
+          // Linear shear within a load-free or constant-q segment.
+          // Constant shear at no-load intervals is handled above.
+        }
+
+        if (Math.abs(vLeft) < 1e-10) {
+          momentCandidates.push({ value: momentAt(left), x: left });
+        }
+        if (Math.abs(vRight) < 1e-10) {
+          momentCandidates.push({ value: momentAt(right), x: right });
+        }
+        if (vLeft * vRight < 0) {
+          const root = left + (0 - vLeft) * (right - left) / (vRight - vLeft);
+          if (root >= left - 1e-9 && root <= right + 1e-9) {
+            momentCandidates.push({ value: momentAt(root), x: root });
+          }
+        }
+      }
+
+      pointLoads.forEach((load) => {
+        if (load.position >= 0 && load.position <= L) {
+          shearCandidates.push({ value: shearAt(load.position, "left"), x: load.position, side: "left" });
+          shearCandidates.push({ value: shearAt(load.position, "right"), x: load.position, side: "right" });
+          momentCandidates.push({ value: momentAt(load.position), x: load.position });
+        }
+      });
+
+      const uniqueShearCandidates = uniqueCandidates(shearCandidates);
+      const uniqueMomentCandidates = uniqueCandidates(momentCandidates);
+
+      const shearMax = uniqueShearCandidates.reduce(
+        (best, item) => item.value > best.value ? item : best,
+        uniqueShearCandidates[0] || { value: 0, x: 0, side: "right" }
+      );
+      const shearMin = uniqueShearCandidates.reduce(
+        (best, item) => item.value < best.value ? item : best,
+        uniqueShearCandidates[0] || { value: 0, x: 0, side: "right" }
+      );
+      const momentMax = uniqueMomentCandidates.reduce(
+        (best, item) => item.value > best.value ? item : best,
+        uniqueMomentCandidates[0] || { value: 0, x: 0 }
+      );
+      const momentMin = uniqueMomentCandidates.reduce(
+        (best, item) => item.value < best.value ? item : best,
+        uniqueMomentCandidates[0] || { value: 0, x: 0 }
+      );
+
+      const breakValues = breakList.map((x) => ({
+        x,
+        vLeft: shearAt(x, "left"),
+        vRight: shearAt(x, "right"),
+        m: momentAt(x)
+      }));
+
+      return {
+        L,
+        pointLoads,
+        uniformLoads,
+        reactions,
+        momentAt,
+        shearAt,
+        breakList,
+        sampleList,
+        breakValues,
+        shearMax,
+        shearMin,
+        momentMax,
+        momentMin
+      };
+    }
+
+    function uniqueCandidates(items) {
+      const groups = new Map();
+      items.forEach((item) => {
+        const key = `${item.x.toFixed(9)}:${item.side || ""}`;
+        if (!groups.has(key)) groups.set(key, item);
+      });
+      return Array.from(groups.values());
+    }
+
+    // Stage 3 rendering module. It consumes calculation output only.
+    function renderStage3(result) {
+      const beamLeft = 86;
+      const beamRight = 714;
+      const beamWidth = beamRight - beamLeft;
+      const beamX = (x) => beamLeft + (x / result.L) * beamWidth;
+
+      const beamLine = document.querySelector('line[x1="86"][y1="82"][x2="714"]');
+      if (beamLine) beamLine.setAttribute("x2", String(beamRight));
+
+      document.getElementById("beam-x-zero").textContent = "0 ft";
+      document.getElementById("beam-x-end").textContent = `${formatDisplay(result.L)} ft`;
+      document.getElementById("beam-x-end").setAttribute("x", String(beamRight + 6));
+      document.getElementById("span-tag").textContent = `${formatDisplay(result.L)} ft span`;
+
+      syncSupport();
+
+      const supportLeft = document.getElementById("left-pin-support");
+      const supportRight = document.getElementById("right-roller-support");
+      const fixedLeft = document.getElementById("fixed-left-support");
+      if (state.support === "cantilever") {
+        if (supportLeft) supportLeft.style.display = "none";
+        if (supportRight) supportRight.style.display = "none";
+        if (fixedLeft) fixedLeft.style.display = "";
+      } else {
+        if (supportLeft) supportLeft.style.display = "";
+        if (supportRight) supportRight.style.display = "";
+        if (fixedLeft) fixedLeft.style.display = "none";
+      }
+
+      renderBeamLoads(result, beamX);
+      renderReactions(result);
+      renderShearDiagram(result, beamX);
+      renderMomentDiagram(result, beamX);
+
+      const status = els.calculationStatus;
+      status.className = "status-banner";
+      status.textContent = "Stage 3 results available. Deflection and design checks remain unavailable.";
+      status.setAttribute("role", "status");
+    }
+
+    function renderBeamLoads(result, beamX) {
+      const uniformGroup = document.getElementById("uniform-load-render");
+      const pointGroup = document.getElementById("point-load-render");
+      uniformGroup.innerHTML = "";
+      pointGroup.innerHTML = "";
+
+      result.uniformLoads.forEach((load) => {
+        const startX = beamX(load.start);
+        const endX = beamX(load.end);
+        const arrowCount = Math.max(2, Math.min(12, Math.ceil((endX - startX) / 68)));
+        for (let i = 0; i < arrowCount; i++) {
+          const x = startX + (endX - startX) * ((i + 0.5) / arrowCount);
+          const downward = load.signedMagnitude >= 0;
+          const y1 = downward ? 50 : 76;
+          const y2 = downward ? 74 : 50;
+          uniformGroup.insertAdjacentHTML(
+            "beforeend",
+            `<line x1="${x.toFixed(2)}" y1="${y1}" x2="${x.toFixed(2)}" y2="${y2}"
+              marker-end="url(#${downward ? "arrow-down" : "arrow-up"})"/>`
+          );
+        }
+      });
+
+      result.pointLoads.forEach((load) => {
+        const x = beamX(load.position);
+        const downward = load.signedMagnitude >= 0;
+        const y1 = downward ? 50 : 76;
+        const y2 = downward ? 74 : 50;
+        pointGroup.insertAdjacentHTML(
+          "beforeend",
+          `<line x1="${x.toFixed(2)}" y1="${y1}" x2="${x.toFixed(2)}" y2="${y2}"
+            stroke="${downward ? "#2563eb" : "#15803d"}" stroke-width="2"
+            marker-end="url(#${downward ? "arrow-down" : "arrow-up"})"/>
+          <text x="${x.toFixed(2)}" y="${downward ? 42 : 92}" text-anchor="middle"
+            font-family="Inter, sans-serif" font-size="11" font-weight="800"
+            fill="${downward ? "#2563eb" : "#15803d"}">${formatDisplay(load.signedMagnitude)} k</text>`
+        );
+      });
+
+      if (result.uniformLoads.length > 0) {
+        const first = result.uniformLoads[0];
+        const startX = beamX(first.start);
+        const endX = beamX(first.end);
+        const box = document.getElementById("uniform-load-label-box");
+        box.setAttribute("x", String(startX));
+        box.setAttribute("width", String(Math.max(0, endX - startX)));
+        document.getElementById("uniform-load-label").setAttribute("x", String((startX + endX) / 2));
+        document.getElementById("uniform-load-label").textContent =
+          `${formatDisplay(first.signedMagnitude)} kip/ft`;
+      } else {
+        document.getElementById("uniform-load-label-box").setAttribute("width", "0");
+        document.getElementById("uniform-load-label").textContent = "";
+      }
+    }
+
+    function renderReactions(result) {
+      const leftText = document.getElementById("left-reaction-placeholder");
+      const rightText = document.getElementById("right-reaction-placeholder");
+
+      if (state.support === "simply-supported") {
+        leftText.textContent = `${formatDisplay(result.reactions.Ay)} k`;
+        rightText.textContent = `${formatDisplay(result.reactions.By)} k`;
+      } else {
+        leftText.textContent = `${formatDisplay(result.reactions.Av)} k`;
+        rightText.textContent = `Mext ${formatDisplay(result.reactions.Mreaction)} kip-ft CCW`;
+      }
+    }
+
+    function renderShearDiagram(result, beamX) {
+      const staticGroup = document.getElementById("shear-static");
+      const renderGroup = document.getElementById("shear-render");
+      if (staticGroup) staticGroup.style.display = "none";
+
+      const zeroY = 176;
+      const chartTop = 176;
+      const chartBottom = 270;
+      const values = [];
+
+      for (let x = 0; x <= result.L + 1e-9; x += 0.25) {
+        const clamped = Math.min(x, result.L);
+        values.push({ x: clamped, value: result.shearAt(clamped, "right") });
+      }
+      result.breakList.forEach((x) => {
+        values.push({ x, value: result.shearAt(x, "left"), side: "left" });
+        values.push({ x, value: result.shearAt(x, "right"), side: "right" });
+      });
+      values.sort((a, b) => a.x - b.x);
+
+      const absMax = Math.max(
+        1,
+        ...values.map((item) => Math.abs(item.value)),
+        Math.abs(result.shearMax.value),
+        Math.abs(result.shearMin.value)
+      );
+      const scaleY = (v) => zeroY - (v / absMax) * 94;
+
+      const pointMap = new Map();
+      values.forEach((item) => {
+        const key = item.x.toFixed(9);
+        if (!pointMap.has(key)) pointMap.set(key, []);
+        pointMap.get(key).push(item);
+      });
+
+      let path = "";
+      const ordered = Array.from(pointMap.entries()).sort(
+        (a, b) => Number(a[0]) - Number(b[0])
+      );
+      ordered.forEach(([key, items], index) => {
+        const x = beamX(Number(key));
+        if (index === 0) {
+          path += `M${x.toFixed(2)} ${scaleY(items[0].value).toFixed(2)} `;
+        } else {
+          const first = items[0];
+          path += `L${x.toFixed(2)} ${scaleY(first.value).toFixed(2)} `;
+        }
+        if (items.length > 1) {
+          const right = items.find((item) => item.side === "right") || items[items.length - 1];
+          path += `L${x.toFixed(2)} ${scaleY(right.value).toFixed(2)} `;
+        }
+      });
+
+      const baseY = chartBottom;
+      const fillPath = path
+        ? `${path}L${beamRightX(result.L, beamX)} ${baseY}L${beamX(0)} ${baseY}Z`
+        : "";
+
+      renderGroup.innerHTML = `
+        <text x="716" y="176" text-anchor="end" font-family="Inter, sans-serif" font-size="10" fill="#98a2b3">kips</text>
+        <line x1="${beamX(0)}" y1="${zeroY}" x2="${beamX(result.L)}" y2="${zeroY}" stroke="#98a2b3" stroke-width="1"/>
+        ${fillPath ? `<path d="${fillPath}" fill="#dbeafe" fill-opacity="0.75"/>` : ""}
+        <path d="${path}" fill="none" stroke="#2563eb" stroke-width="2.5"/>
+        ${renderExtremumLabel(result.shearMax, "shear", beamX, scaleY, "Vmax")}
+        ${renderExtremumLabel(result.shearMin, "shear", beamX, scaleY, "Vmin")}
+      `;
+    }
+
+    function beamRightX(L, beamX) {
+      return beamX(L);
+    }
+
+    function renderMomentDiagram(result, beamX) {
+      const staticGroup = document.getElementById("moment-static");
+      const renderGroup = document.getElementById("moment-render");
+      if (staticGroup) staticGroup.style.display = "none";
+
+      const zeroY = 323;
+      const values = [];
+      for (let x = 0; x <= result.L + 1e-9; x += 0.25) {
+        const clamped = Math.min(x, result.L);
+        values.push({ x: clamped, value: result.momentAt(clamped) });
+      }
+      result.breakList.forEach((x) => values.push({ x, value: result.momentAt(x) }));
+      result.momentMax && values.push({ x: result.momentMax.x, value: result.momentMax.value });
+      result.momentMin && values.push({ x: result.momentMin.x, value: result.momentMin.value });
+      values.sort((a, b) => a.x - b.x);
+
+      const absMax = Math.max(
+        1,
+        ...values.map((item) => Math.abs(item.value)),
+        Math.abs(result.momentMax.value),
+        Math.abs(result.momentMin.value)
+      );
+      const scaleY = (v) => zeroY - (v / absMax) * 84;
+
+      let path = "";
+      values.forEach((item, index) => {
+        const x = beamX(item.x);
+        const y = scaleY(item.value);
+        path += `${index === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)} `;
+      });
+
+      renderGroup.innerHTML = `
+        <text x="716" y="323" text-anchor="end" font-family="Inter, sans-serif" font-size="10" fill="#98a2b3">kip-ft</text>
+        <line x1="${beamX(0)}" y1="${zeroY}" x2="${beamX(result.L)}" y2="${zeroY}" stroke="#98a2b3" stroke-width="1"/>
+        <path d="${path}L${beamX(result.L)} ${zeroY}L${beamX(0)} ${zeroY}Z"
+          fill="#cce5ff" fill-opacity="0.85" stroke="#2563eb" stroke-width="2"/>
+        ${renderExtremumLabel(result.momentMax, "moment", beamX, scaleY, "Mmax")}
+        ${renderExtremumLabel(result.momentMin, "moment", beamX, scaleY, "Mmin")}
+      `;
+    }
+
+    function renderExtremumLabel(item, kind, beamX, scaleY, prefix) {
+      if (!item) return "";
+      const x = beamX(item.x);
+      const y = scaleY(item.value);
+      const labelY = y - 8;
+      const unit = kind === "shear" ? "k" : "kip-ft";
+      const label = kind === "shear" && item.side
+        ? `${prefix} ${item.side === "left" ? "V-" : item.side === "right" ? "V+" : ""} ${formatDisplay(item.value)} ${unit}`
+        : `${prefix} ${formatDisplay(item.value)} ${unit}`;
+      return `
+        <line x1="${x.toFixed(2)}" y1="${y.toFixed(2)}" x2="${x.toFixed(2)}" y2="${Math.max(176, y - 18).toFixed(2)}"
+          stroke="#2563eb" stroke-width="1" stroke-dasharray="3 4"/>
+        <text x="${x.toFixed(2)}" y="${labelY.toFixed(2)}" text-anchor="middle"
+          font-family="Inter, sans-serif" font-size="10" font-weight="800" fill="#2563eb">${label} · ${formatDisplay(item.x)} ft</text>`;
+    }
+
+    function formatDisplay(value) {
+      if (!Number.isFinite(value)) return "—";
+      return value.toFixed(2);
+    }
 
     function onReady() {
       els.spanSlider = document.getElementById("span-slider");
@@ -1269,6 +1758,18 @@
       syncLoadLimitMessage();
       renderUnavailable(valid, errors);
       syncPlaceholderDrawing();
+      if (valid) {
+        const stage3Result = calculateStage3();
+        if (stage3Result) {
+          renderStage3(stage3Result);
+        }
+      } else {
+        syncPlaceholderDrawing();
+        document.getElementById("shear-static").style.display = "";
+        document.getElementById("moment-static").style.display = "";
+        document.getElementById("shear-render").innerHTML = "";
+        document.getElementById("moment-render").innerHTML = "";
+      }
       return valid;
     }
 
@@ -1321,7 +1822,7 @@
         });
       } else {
         status.className = "status-banner";
-        status.textContent = "Calculations unavailable in Stage 2. Inputs are valid.";
+        status.textContent = "Stage 3 results available. Deflection and design checks remain unavailable.";
         statuses.forEach((item) => {
           item.className = "status-pill status-neutral";
           item.textContent = "UNAVAILABLE";
